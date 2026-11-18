@@ -1390,9 +1390,25 @@ function triggerReinforcement(val) {
   let habitatVisits=0;
   let habitatLastVisit=-1;
   let habitatCooldown=0;
-  function habitatStep(decision) {
-    if (sleeping) return {dx:0,dz:0,dy:0,feeding:false};
-    // The neural choice is authoritative; motor steering must not reselect by distance.
+  // Environmental field: coordinates are only used by the world to generate sensory input.
+  // The agent receives local odor intensity and left/right antenna differences.
+  function odorAt(x,z,i) {
+    const f=HABITAT_FRUITS[i];
+    const d2=(x-f.x)**2+(z-f.z)**2;
+    return f.odor*f.food/(1+0.085*d2);
+  }
+  function localOlfaction(pos) {
+    const a=pos.angle,offset=0.7;
+    const left={x:pos.x-Math.sin(a)*offset,z:pos.z+Math.cos(a)*offset};
+    const right={x:pos.x+Math.sin(a)*offset,z:pos.z-Math.cos(a)*offset};
+    return HABITAT_FRUITS.map((f,i)=>({
+      food:Math.max(0,odorAt(pos.x,pos.z,i)),
+      left:odorAt(left.x,left.z,i),
+      right:odorAt(right.x,right.z,i)
+    }));
+  }
+  function habitatStep(decision,sensory) {
+    if(sleeping)return {dx:0,dz:0,dy:0,feeding:false};
     HABITAT_FRUITS.forEach((f,i)=>{
       f.food=Math.min(1,f.food+0.000012);
       fruitMeshes[i].mesh.scale.setScalar(0.72+0.28*f.food);
@@ -1400,12 +1416,18 @@ function triggerReinforcement(val) {
     });
     const i=decision.target;
     if(i<0||i>=HABITAT_FRUITS.length)return {dx:0,dz:0,dy:0,feeding:false};
-    const f=HABITAT_FRUITS[i],dist=Math.hypot(f.x-flyPos.x,f.z-flyPos.z);
-    if(f.food<=0.04)return {dx:0,dz:0,dy:0,feeding:false};
-    const bestScore=Math.max(0,neuroEthology.odorValue(i)+f.odor*f.food/(1+0.085*dist*dist));
-    const pull=0.65+0.65*Math.min(1,Math.max(0,bestScore));
+    const f=HABITAT_FRUITS[i],signal=sensory[i];
+    // Antennal comparison controls turning; no target coordinates in the motor command.
+    const lateral=(signal.left-signal.right)/(0.015+signal.left+signal.right);
+    const forward=Math.max(0.10,Math.min(1,signal.food*2.5));
+    const turn=Math.max(-1,Math.min(1,lateral*2.0));
+    const a=flyPos.angle;
+    const dx=Math.cos(a)*forward-Math.sin(a)*turn;
+    const dz=Math.sin(a)*forward+Math.cos(a)*turn;
+    // Feeding is a short-range contact event, not long-distance target navigation.
+    const contact=Math.hypot(f.x-flyPos.x,f.z-flyPos.z)<1.25;
     let feeding=false;
-    if(decision.activity==='alimentar'&&dist<1.25&&flyPos.y<0.72&&habitatCooldown<=0&&f.food>0.02){
+    if(decision.activity==='alimentar'&&contact&&flyPos.y<0.72&&f.food>0.02){
       feeding=true;
       pet.energy=Math.min(1,pet.energy+0.0025);
       f.food=Math.max(0,f.food-0.0018);
@@ -1413,10 +1435,7 @@ function triggerReinforcement(val) {
       if(neuroEthology.steps%24===0)neuroEthology.reinforce(i,+1);
       if(habitatLastVisit!==i){habitatVisits++;habitatLastVisit=i;neuroEthology.visits[i]++;}
     }
-    habitatCooldown=Math.max(0,habitatCooldown-1);
-    return {dx:(f.x-flyPos.x)/Math.max(0.4,dist)*pull,
-      dz:(f.z-flyPos.z)/Math.max(0.4,dist)*pull,
-      dy:(0.35-flyPos.y)/Math.max(0.8,dist)*pull*0.55,feeding};
+    return {dx,dz,dy:signal.food>0.08?(0.3-flyPos.y)*0.2:0,feeding};
   }
 
 
@@ -1461,38 +1480,32 @@ class FlyNeuroEthology {
     }
     return denom?sum/denom:0;
   }
-  choose(fruits,pos,pet,perches) {
-    this.sense(fruits,pos);this.steps++;
+  choose(sensory,pet) {
+    this.steps++;
     const hunger=1-pet.energy,fatigue=1-pet.rest;
     const actions=[
-      {name:'alimentar',score:0.15+2.5*hunger+Math.max(...fruits.map((f,i)=>this.odorValue(i)))*0.45},
+      {name:'alimentar',score:0.15+2.5*hunger+Math.max(...sensory.map((v,i)=>this.odorValue(i)))*0.45},
       {name:'repousar',score:0.1+2.1*fatigue},
       {name:'explorar',score:0.4+pet.curiosity*0.8},
       {name:'brincar',score:0.10+pet.curiosity*0.9}
     ];
-    const exps=actions.map(a=>Math.exp(a.score*1.6)),total=exps.reduce((a,b)=>a+b,0);
-    let r=this.rng.next()*total,chosen=actions[0];
-    for(let i=0;i<actions.length;i++){r-=exps[i];if(r<=0){chosen=actions[i];break;}}
-    // Action persistence reduces frame-to-frame jitter.
-    if(this.steps===1||this.steps%90===0)this.activity=chosen.name;
-    // Evaluate every odor independently of its position. No index-based tie breaking.
-    const scores=fruits.map((f,i)=>{
-      if(f.food<=0.04)return -Infinity;
-      const dist=Math.hypot(f.x-pos.x,f.z-pos.z);
-      const odor=f.odor*f.food/(1+0.085*dist*dist);
-      return odor*(0.35+2*hunger)+this.odorValue(i)*1.5+
-        this.spatial[i]*0.08-0.035*dist;
+    if(this.steps===1||this.steps%90===0){
+      const exps=actions.map(a=>Math.exp(a.score*1.6)),total=exps.reduce((a,b)=>a+b,0);
+      let r=this.rng.next()*total;
+      for(let i=0;i<actions.length;i++){r-=exps[i];if(r<=0){this.activity=actions[i].name;break;}}
+    }
+    const scores=sensory.map((v,i)=>{
+      if(v.food<=0.0005)return -Infinity;
+      return v.food*(0.35+2*hunger)+this.odorValue(i)*1.5+
+        this.spatial[i]*0.08;
     });
     let best=-1,bestScore=-Infinity;
     for(let i=0;i<scores.length;i++){
-      const score=scores[i];
-      if(score>bestScore+1e-9){best=i;bestScore=score;}
-      else if(Number.isFinite(score)&&Math.abs(score-bestScore)<=1e-9&&this.rng.next()<0.5){best=i;}
+      if(scores[i]>bestScore+1e-9){best=i;bestScore=scores[i];}
+      else if(Number.isFinite(scores[i])&&Math.abs(scores[i]-bestScore)<=1e-9&&this.rng.next()<0.5)best=i;
     }
-    // Preserve the target only if its score remains competitive.
     const previous=this.lastChoice;
-    if(previous>=0&&previous<fruits.length&&Number.isFinite(scores[previous])&&
-       scores[previous]>=bestScore-0.12&&this.steps%120!==0)best=previous;
+    if(previous>=0&&Number.isFinite(scores[previous])&&scores[previous]>=bestScore-0.12&&this.steps%120!==0)best=previous;
     this.lastChoice=best;
     return {activity:this.activity,target:best,odorValue:best<0?0:this.odorValue(best)};
   }
@@ -1548,16 +1561,16 @@ function runNeuroExperiments() {
   const trials=100;
   for(let seed=1;seed<=trials;seed++){
     const control=new FlyNeuroEthology(seed);
-    if(control.choose(fruits,pos,needs,[]).target===0)controlA++;
+    if(control.choose(fruits.map(f=>({food:f.food?0.5:0,left:0.5,right:0.5})),needs).target===0)controlA++;
     const trained=new FlyNeuroEthology(seed);
     for(let n=0;n<40;n++){trained.reinforce(0,1);trained.reinforce(1,-1);}
-    if(trained.choose(fruits,pos,needs,[]).target===0)trainedA++;
+    if(trained.choose(fruits.map(f=>({food:f.food?0.5:0,left:0.5,right:0.5})),needs).target===0)trainedA++;
     const swapped=fruits.map(f=>({...f}));
     [swapped[0].x,swapped[1].x]=[swapped[1].x,swapped[0].x];
-    if(trained.choose(swapped,pos,needs,[]).target===0)transferA++;
+    if(trained.choose(swapped.map(f=>({food:f.food?0.5:0,left:0.5,right:0.5})),needs).target===0)transferA++;
     const reversed=new FlyNeuroEthology(seed);
     for(let n=0;n<40;n++){reversed.reinforce(0,-1);reversed.reinforce(1,1);}
-    if(reversed.choose(swapped,pos,needs,[]).target===1)reversedB++;
+    if(reversed.choose(swapped.map(f=>({food:f.food?0.5:0,left:0.5,right:0.5})),needs).target===1)reversedB++;
   }
   report.push({test:'Controle sem viés',pass:controlA>25&&controlA<75,value:controlA/trials});
   report.push({test:'Preferência aprendida',pass:trainedA>=90,value:trainedA/trials});
@@ -1640,8 +1653,9 @@ function stepSimulation() {
   }
 
   // Natural odor-guided foraging, competing with trained zone preferences.
-  const neuroDecision=neuroEthology.choose(HABITAT_FRUITS,flyPos,pet,PERCHES);
-  const foraging = habitatStep(neuroDecision);
+  const odorSignals=localOlfaction(flyPos);
+  const neuroDecision=neuroEthology.choose(odorSignals,pet);
+  const foraging = habitatStep(neuroDecision,odorSignals);
   if(neuroDecision.activity!=='alimentar') {
     foraging.dx=0;foraging.dz=0;foraging.dy=0;
   }
