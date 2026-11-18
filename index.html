@@ -1,0 +1,1964 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drosophila 3D Pet & Trainer — Terrário Neurobiológico</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0d13;
+    --panel: #131821;
+    --panel-2: #1b2230;
+    --text: #eef2f9;
+    --muted: #8e9bb2;
+    --accent: #4f9cff;
+    --pos: #34d399;
+    --neg: #fb7185;
+    --gold: #fbbf24;
+    --purple: #c084fc;
+    --cyan: #38bdf8;
+    --border: #263144;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.4;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 355px;
+    gap: 14px;
+    padding: 14px;
+    max-width: 1600px;
+    margin: 0 auto;
+    min-height: 100vh;
+    align-items: start;
+  }
+  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+  .card {
+    background: linear-gradient(180deg, #151b26 0%, #11161f 100%);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 18px;
+    padding: 14px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+  .stage-col { display: flex; flex-direction: column; gap: 12px; }
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 4px;
+  }
+  .btn-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    background: rgba(10, 14, 22, 0.55);
+    padding: 4px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+  }
+  button {
+    background: rgba(30, 39, 54, 0.85);
+    color: var(--text);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 9px;
+    padding: 8px 13px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: transform 0.08s ease, border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+  }
+  button:hover {
+    border-color: var(--accent);
+    background: rgba(42, 56, 78, 0.95);
+    box-shadow: 0 0 0 2px rgba(79, 156, 255, 0.15);
+  }
+  button:active { transform: translateY(1px) scale(0.98); }
+  button.active {
+    background: linear-gradient(180deg, #24528a 0%, #1b3c69 100%);
+    border-color: #60a5fa;
+    color: #ffffff;
+    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.3);
+  }
+  button.btn-pos {
+    background: linear-gradient(180deg, #106346 0%, #0b4532 100%);
+    border-color: #34d399;
+    color: #ecfdf5;
+    font-weight: 600;
+    padding: 11px 18px;
+    font-size: 13.5px;
+    border-radius: 11px;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
+  }
+  button.btn-pos:hover { background: linear-gradient(180deg, #147a57 0%, #0f563f 100%); }
+  button.btn-neg {
+    background: linear-gradient(180deg, #7f1d34 0%, #581223 100%);
+    border-color: #fb7185;
+    color: #fff1f2;
+    font-weight: 600;
+    padding: 11px 18px;
+    font-size: 13.5px;
+    border-radius: 11px;
+    box-shadow: 0 4px 14px rgba(244, 63, 94, 0.22);
+  }
+  button.btn-neg:hover { background: linear-gradient(180deg, #99223e 0%, #6d172c 100%); }
+  button.btn-sleep {
+    background: linear-gradient(180deg, #3c2866 0%, #2b1b4a 100%);
+    border-color: #a78bfa;
+    color: #f5f3ff;
+  }
+  button.btn-sleep.active { background: linear-gradient(180deg, #5b37a3 0%, #44277d 100%); }
+  button.btn-pet {
+    background: linear-gradient(180deg, #1e3b2e 0%, #152b22 100%);
+    border-color: #34d39966;
+    color: #d1fae5;
+  }
+  button.btn-pet:hover { border-color: var(--pos); }
+  .viewport {
+    position: relative;
+    width: 100%;
+    height: min(68vh, 640px);
+    min-height: 440px;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: radial-gradient(circle at 50% 35%, #111827 0%, #070a10 100%);
+  }
+  @media (max-width: 640px) { .viewport { height: 390px; min-height: 360px; } }
+  .cam-hud {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    display: flex;
+    gap: 6px;
+    pointer-events: auto;
+  }
+  .cam-hud button {
+    padding: 6px 10px;
+    font-size: 12px;
+    background: rgba(12, 16, 24, 0.84);
+    backdrop-filter: blur(8px);
+  }
+  .hud-overlay {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .hud-pill {
+    background: rgba(12, 16, 24, 0.82);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 7px 12px;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .hud-pill strong { color: var(--gold); }
+  .hud-bottom {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+    gap: 8px;
+  }
+  .clicker-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .elig-wrap { flex: 1; min-width: 170px; }
+  .elig-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .bar-track {
+    height: 8px;
+    background: #0c1017;
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    transition: width 0.08s linear;
+  }
+  h2 {
+    margin: 0 0 10px 0;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.01em;
+  }
+  .pet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pet-name-input {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 14px;
+    font-weight: 600;
+    width: 165px;
+  }
+  .pet-name-input:focus { outline: none; border-color: var(--accent); }
+  .personality-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 9px;
+    border-radius: 99px;
+    background: #1b2c44;
+    border: 1px solid #355a8a;
+    color: #bfdbfe;
+    white-space: nowrap;
+  }
+  .pet-vitals {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .vital-box {
+    background: var(--panel-2);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  .mission-box {
+    background: #152236;
+    border: 1px solid #29446b;
+    border-radius: 10px;
+    padding: 11px;
+    margin-bottom: 12px;
+  }
+  .mission-title { font-size: 12.5px; font-weight: 600; color: #dbeafe; margin-bottom: 3px; }
+  .mission-desc { font-size: 11.5px; color: #a7c0e2; margin-bottom: 7px; }
+  .tier-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .tier-btn {
+    padding: 7px 6px;
+    font-size: 11.5px;
+    text-align: center;
+  }
+  .tier-btn small { display: block; font-size: 10px; color: var(--muted); font-weight: 400; }
+  .tier-btn.active small { color: #cfe2ff; }
+  .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .metric {
+    background: var(--panel-2);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  .metric .label {
+    font-size: 10.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .metric .val {
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+  }
+  .divider { height: 1px; background: var(--border); margin: 12px 0; }
+  .bar-group { margin: 7px 0; }
+  .status-log { font-size: 12px; color: var(--muted); min-height: 18px; }
+  .kbd {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: #0d1118;
+    border: 1px solid var(--border);
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="card stage-col">
+    <div class="topbar">
+      <div class="btn-group">
+        <button type="button" id="btn-play" class="active">Pausar</button>
+        <button type="button" id="btn-feed" class="btn-pet">Dar Néctar</button>
+        <button type="button" id="btn-ball" class="btn-pet">Jogar Bolinha</button>
+        <button type="button" id="btn-takeoff" class="btn-pet">Decolar (Voo 3D)</button>
+        <button type="button" id="btn-maze" class="active">Labirinto: Ligado</button>
+        <button type="button" id="btn-sleep" class="btn-sleep">Descansar (LTM)</button>
+        <button type="button" id="btn-cam">Câmera: Longe</button>
+        <button type="button" id="btn-mute">Som: Ligado</button>
+      </div>
+      <div class="btn-group">
+        <button type="button" id="btn-reset-weights">Zerar Memória</button>
+        <button type="button" id="btn-save">Salvar</button>
+        <button type="button" id="btn-load">Restaurar</button>
+      </div>
+    </div>
+
+    <div class="topbar" style="padding-top: 0; padding-bottom: 2px;">
+      <div class="btn-group">
+        <span style="font-size: 11.5px; color: var(--muted); padding: 0 6px;">Clique no 3D:</span>
+        <button type="button" class="place-btn active" data-place="nectar">Néctar</button>
+        <button type="button" class="place-btn" data-place="ball">Bolinha</button>
+        <button type="button" class="place-btn" data-place="pillar">Obstáculo</button>
+        <button type="button" class="place-btn" data-place="call">Chamar Pet</button>
+        <button type="button" id="btn-clear-custom">Limpar Itens</button>
+      </div>
+    </div>
+
+    <div class="viewport" id="viewport">
+      <div class="hud-overlay">
+        <div class="hud-pill" id="hud-zone">Zona atual: <strong>Centro do Terrário</strong></div>
+        <div class="hud-pill" id="hud-score">Pontos: <strong>0</strong> · Sequência: <strong>0</strong></div>
+      </div>
+      <div class="hud-bottom">
+        <div class="hud-pill" id="hud-action">Ação: <strong>Explorando</strong> · Altitude: <strong>0.0 cm</strong></div>
+      </div>
+      <div class="cam-hud">
+        <button type="button" id="btn-zoom-in" title="Aproximar câmera">Zoom +</button>
+        <button type="button" id="btn-zoom-out" title="Afastar câmera">Zoom -</button>
+        <button type="button" id="btn-cam-far" title="Visão panorâmica mais distante">Visão Longe</button>
+      </div>
+    </div>
+
+    <div class="clicker-bar">
+      <div class="btn-group">
+        <button type="button" id="btn-pos" class="btn-pos">+1 Recompensa (PAM) <span class="kbd">Espaço</span></button>
+        <button type="button" id="btn-neg" class="btn-neg">-1 Aversão (PPL1) <span class="kbd">X</span></button>
+      </div>
+      <div class="elig-wrap">
+        <div class="elig-head">
+          <span>Janela de Elegibilidade (250 ms)</span>
+          <span id="v-elig">0%</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" id="b-elig" style="width: 0%; background: var(--gold);"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-log" id="status-line">
+      Dê um nome ao seu pet, alimente com néctar, jogue a bolinha ou use +1 / -1 para moldar a personalidade dela.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="pet-header">
+      <input id="pet-name" class="pet-name-input" type="text" value="Melanogaster #01" aria-label="Nome da mosca virtual">
+      <span class="personality-badge" id="pet-personality">Exploradora</span>
+    </div>
+
+    <div class="pet-vitals">
+      <div class="vital-box">
+        <div class="elig-head"><span>Energia (Fome)</span><span id="v-energy">78%</span></div>
+        <div class="bar-track"><div class="bar-fill" id="b-energy" style="width: 78%; background: var(--pos);"></div></div>
+      </div>
+      <div class="vital-box">
+        <div class="elig-head"><span>Descanso (R5)</span><span id="v-rest">82%</span></div>
+        <div class="bar-track"><div class="bar-fill" id="b-rest" style="width: 82%; background: var(--purple);"></div></div>
+      </div>
+      <div class="vital-box">
+        <div class="elig-head"><span>Curiosidade</span><span id="v-curiosity">65%</span></div>
+        <div class="bar-track"><div class="bar-fill" id="b-curiosity" style="width: 65%; background: var(--cyan);"></div></div>
+      </div>
+      <div class="vital-box">
+        <div class="elig-head"><span>Vínculo (Confiança)</span><span id="v-bond">20%</span></div>
+        <div class="bar-track"><div class="bar-fill" id="b-bond" style="width: 20%; background: var(--gold);"></div></div>
+      </div>
+    </div>
+
+    <div class="mission-box">
+      <div class="mission-title" id="mission-title">Desafio 1: Preferência pelo Alvo Ciano</div>
+      <div class="mission-desc" id="mission-desc">
+        Aplique +1 (PAM) no Anel Ciano e -1 (PPL1) na Zona Vermelha. Depois clique em Descansar para consolidar em LTM.
+      </div>
+      <div class="elig-head">
+        <span>Progresso do Adestramento</span>
+        <span id="v-mission">0 / 5 acertos</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" id="b-mission" style="width: 0%; background: var(--pos);"></div>
+      </div>
+    </div>
+
+    <h2>Arquitetura Cerebral (Expansão KC/MBON)</h2>
+    <div class="tier-row">
+      <button type="button" class="tier-btn active" data-tier="drosophila">
+        Drosophila<small>48 KC · 2 MBON</small>
+      </button>
+      <button type="button" class="tier-btn" data-tier="expanded">
+        Expandido<small>160 KC · 4 MBON</small>
+      </button>
+      <button type="button" class="tier-btn" data-tier="bee">
+        Abelha-Scale<small>420 KC · 6 MBON</small>
+      </button>
+      <button type="button" class="tier-btn" data-tier="super">
+        Super-Colônia<small>1000 KC · Recorrente</small>
+      </button>
+    </div>
+    <div class="status-log" id="tier-info" style="margin-bottom: 10px;">
+      Arquitetura ativa: 48 KC · 96 sinapses plásticas · Filtro APL 35% · Memória de trabalho recorrente.
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><div class="label">Tempo Neural</div><div class="val" id="m-time">0 ms</div></div>
+      <div class="metric"><div class="label">Separação (APL)</div><div class="val" id="m-sparse">0%</div></div>
+      <div class="metric"><div class="label">Pref. Ciano</div><div class="val" id="m-pref-cyan">1.000x</div></div>
+      <div class="metric"><div class="label">Pref. Vermelho</div><div class="val" id="m-pref-red">1.000x</div></div>
+      <div class="metric"><div class="label">Memória Curta</div><div class="val" id="m-short">0.000</div></div>
+      <div class="metric"><div class="label">Memória Longa</div><div class="val" id="m-long">0.000</div></div>
+    </div>
+
+    <div class="divider"></div>
+    <h2>Valência Aprendida (MBON) e Motores</h2>
+    <div class="bar-group">
+      <div class="elig-head"><span>MBON Aproximação (Ciano)</span><span id="v-mbon-c">0</span></div>
+      <div class="bar-track"><div class="bar-fill" id="b-mbon-c" style="width: 0%; background: var(--cyan);"></div></div>
+    </div>
+    <div class="bar-group">
+      <div class="elig-head"><span>MBON Aproximação (Âmbar)</span><span id="v-mbon-a">0</span></div>
+      <div class="bar-track"><div class="bar-fill" id="b-mbon-a" style="width: 0%; background: var(--gold);"></div></div>
+    </div>
+    <div class="bar-group">
+      <div class="elig-head"><span>MBON Evitação (Vermelho)</span><span id="v-mbon-r">0</span></div>
+      <div class="bar-track"><div class="bar-fill" id="b-mbon-r" style="width: 0%; background: var(--neg);"></div></div>
+    </div>
+    <div class="bar-group">
+      <div class="elig-head"><span>MBON Voo (Anel Aéreo)</span><span id="v-mbon-s">0</span></div>
+      <div class="bar-track"><div class="bar-fill" id="b-mbon-s" style="width: 0%; background: var(--purple);"></div></div>
+    </div>
+    <div class="bar-group">
+      <div class="elig-head"><span>Descendentes Motores (DNs)</span><span id="v-dn">0</span></div>
+      <div class="bar-track"><div class="bar-fill" id="b-dn" style="width: 0%; background: var(--pos);"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================================
+// 1. Web Audio Synthesizer
+// ============================================================================
+let audioCtx = null;
+let muted = false;
+
+function playTone(freq, duration, type = 'sine', gainVal = 0.08) {
+  if (muted) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  } catch (e) {}
+}
+
+// ============================================================================
+// 2. Procedural Textures for Upgraded 3D Visuals
+// ============================================================================
+function makeFloorTexture() {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 512;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(256, 256, 20, 256, 256, 256);
+  grad.addColorStop(0, '#1e2824');
+  grad.addColorStop(0.65, '#161f1d');
+  grad.addColorStop(1, '#0e1415');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 512, 512);
+  // Organic moss/soil speckles
+  for (let i = 0; i < 3800; i++) {
+    const x = Math.random() * 512;
+    const y = Math.random() * 512;
+    const r = Math.random() * 2.2;
+    g.fillStyle = Math.random() > 0.5 ? 'rgba(60, 95, 72, 0.14)' : 'rgba(15, 22, 20, 0.22)';
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+function makeWingTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, 256, 128);
+  const grad = g.createLinearGradient(0, 0, 256, 128);
+  grad.addColorStop(0, 'rgba(210, 238, 255, 0.55)');
+  grad.addColorStop(0.5, 'rgba(175, 215, 255, 0.32)');
+  grad.addColorStop(1, 'rgba(225, 195, 255, 0.45)');
+  g.fillStyle = grad;
+  g.beginPath();
+  g.ellipse(128, 64, 120, 54, 0, 0, Math.PI * 2);
+  g.fill();
+  // Realistic Drosophila longitudinal wing veins (L1..L5)
+  g.strokeStyle = 'rgba(230, 245, 255, 0.65)';
+  g.lineWidth = 2;
+  const veins = [
+    [[12, 64], [120, 22], [240, 44]],
+    [[12, 64], [130, 46], [244, 62]],
+    [[12, 64], [132, 74], [234, 84]],
+    [[12, 64], [110, 96], [202, 108]]
+  ];
+  for (const v of veins) {
+    g.beginPath();
+    g.moveTo(v[0][0], v[0][1]);
+    g.quadraticCurveTo(v[1][0], v[1][1], v[2][0], v[2][1]);
+    g.stroke();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+function makeEyeTexture() {
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#c81e3a';
+  g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#ff4d6d';
+  for (let y = 4; y < 128; y += 8) {
+    for (let x = (y % 16 === 4 ? 4 : 8); x < 128; x += 8) {
+      g.beginPath(); g.arc(x, y, 2.3, 0, Math.PI * 2); g.fill();
+    }
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+// ============================================================================
+// 3. Expanded Brain Architecture (48 KC up to 1000 KC + Recurrent Working Memory)
+// ============================================================================
+const TIERS = {
+  drosophila: { name: 'Drosophila',    nKC: 48,   nMBON: 2, fanIn: 4, aplGain: 0.35, recGain: 0.05 },
+  expanded:   { name: 'Expandido',     nKC: 160,  nMBON: 4, fanIn: 3, aplGain: 0.55, recGain: 0.14 },
+  bee:        { name: 'Abelha-Scale',  nKC: 420,  nMBON: 6, fanIn: 3, aplGain: 0.72, recGain: 0.24 },
+  super:      { name: 'Super-Colônia', nKC: 1000, nMBON: 8, fanIn: 3, aplGain: 0.84, recGain: 0.36 }
+};
+
+function createRng(seed) {
+  let s = seed >>> 0;
+  return {
+    next() {
+      s = (s + 0x6D2B79F5) >>> 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    },
+    getState() { return s; },
+    setState(v) { s = v >>> 0; }
+  };
+}
+
+class ArchitecturalFlyBrain {
+  constructor(tierKey = 'drosophila', seed = 42) {
+    this.tierKey = tierKey;
+    this.cfg = TIERS[tierKey];
+    this.rng = createRng(seed);
+
+    this.nSens = 30;
+    this.nKC = this.cfg.nKC;
+    this.nMBON = this.cfg.nMBON;
+    this.nDN = 12;
+    this.nTotal = this.nSens + this.nKC + this.nMBON + this.nDN;
+
+    this.dt = 0.25;
+    this.ev = Math.exp(-this.dt / 20.0);
+    this.ee = Math.exp(-this.dt / 250.0);
+    this.es = Math.exp(-this.dt / 18000.0);
+    this.tick = 0;
+
+    // Sparse expansion Sensory -> KC (5 cue channels: Cyan=0, Amber=1, Red=2, Ball=3, Aerial Sky=4)
+    this.kcPre = [];
+    this.kcCueTag = new Int8Array(this.nKC);
+    for (let k = 0; k < this.nKC; k++) {
+      const group = k % 5;
+      this.kcCueTag[k] = group;
+      const base = group * 6;
+      const inputs = [];
+      for (let f = 0; f < this.cfg.fanIn; f++) {
+        const src = (f === 0 || this.rng.next() < 0.85)
+          ? base + Math.floor(this.rng.next() * 6)
+          : Math.floor(this.rng.next() * 30);
+        inputs.push(src);
+      }
+      this.kcPre.push(inputs);
+    }
+
+    this.nPlastic = this.nKC * 2;
+    this.shortW = new Float64Array(this.nPlastic);
+    this.longW = new Float64Array(this.nPlastic);
+    this.elig = new Float64Array(this.nPlastic);
+    this.kcV = new Float64Array(this.nKC);
+    this.mbonRate = new Float64Array(5); // Cyan, Amber, Red, Ball, Sky
+    this.workingMem = new Float64Array(5); // Recurrent MBON->KC persistence
+    this.lastActiveKC = 0;
+  }
+
+  getFactor(idx) {
+    return Math.min(3.0, Math.max(0.1, 1.0 + this.shortW[idx] + this.longW[idx]));
+  }
+
+  stepWindow(cueInputs, modulation, consolidate, learn, durationMs = 15.0) {
+    const steps = Math.round(durationMs / this.dt);
+    let activeKCSum = 0;
+    const mbonApproach = [0, 0, 0, 0, 0];
+    const mbonAvoid = [0, 0, 0, 0, 0];
+    let dnSpikes = 0;
+
+    const cArr = [cueInputs.cyan, cueInputs.amber, cueInputs.red, cueInputs.ball, cueInputs.sky];
+    const sensProb = new Float64Array(this.nSens);
+    for (let g = 0; g < 5; g++) {
+      // Recurrent working memory keeps recent context slightly active in higher tiers
+      this.workingMem[g] = this.workingMem[g] * 0.92 + cArr[g] * 0.08;
+      const effCue = Math.min(1.0, cArr[g] + this.cfg.recGain * this.workingMem[g]);
+      const p = effCue * 0.14;
+      for (let i = 0; i < 6; i++) sensProb[g * 6 + i] = p;
+    }
+
+    const consFrac = consolidate > 0 ? -Math.expm1(-consolidate * this.dt / 550.0) : 0;
+    const lr = 0.42;
+
+    for (let s = 0; s < steps; s++) {
+      const sensSpk = new Uint8Array(this.nSens);
+      for (let i = 0; i < this.nSens; i++) {
+        if (this.rng.next() < sensProb[i]) sensSpk[i] = 1;
+      }
+
+      let kcSumV = 0;
+      for (let k = 0; k < this.nKC; k++) {
+        let inp = 0;
+        const pres = this.kcPre[k];
+        for (let f = 0; f < pres.length; f++) inp += sensSpk[pres[f]] * 3.8;
+        this.kcV[k] = this.ev * this.kcV[k] + inp + (this.rng.next() - 0.5) * 0.22;
+        kcSumV += Math.max(0, this.kcV[k]);
+      }
+
+      const aplInh = this.cfg.aplGain * (kcSumV / this.nKC);
+      let firedCount = 0;
+
+      for (let k = 0; k < this.nKC; k++) {
+        const netV = this.kcV[k] - aplInh;
+        const cue = this.kcCueTag[k];
+        const eApp = k * 2;
+        const eAvd = k * 2 + 1;
+
+        this.elig[eApp] *= this.ee;
+        this.elig[eAvd] *= this.ee;
+
+        if (netV > 2.55) {
+          this.kcV[k] = 0;
+          firedCount++;
+          const fApp = this.getFactor(eApp);
+          const fAvd = this.getFactor(eAvd);
+          mbonApproach[cue] += fApp;
+          mbonAvoid[cue] += fAvd;
+          this.elig[eApp] = Math.min(1.0, this.elig[eApp] + 0.65);
+          this.elig[eAvd] = Math.min(1.0, this.elig[eAvd] + 0.65);
+        }
+
+        this.shortW[eApp] *= this.es;
+        this.shortW[eAvd] *= this.es;
+
+        if (learn && modulation !== 0) {
+          const delta = lr * modulation * this.elig[eApp] * (this.dt / 250.0);
+          this.shortW[eApp] = Math.min(2.0 - this.longW[eApp], Math.max(-0.9 - this.longW[eApp], this.shortW[eApp] + delta));
+          this.shortW[eAvd] = Math.min(2.0 - this.longW[eAvd], Math.max(-0.9 - this.longW[eAvd], this.shortW[eAvd] - delta));
+        }
+
+        if (consFrac > 0) {
+          const trA = this.shortW[eApp] * consFrac;
+          this.longW[eApp] += trA;
+          this.shortW[eApp] -= trA;
+          const trB = this.shortW[eAvd] * consFrac;
+          this.longW[eAvd] += trB;
+          this.shortW[eAvd] -= trB;
+        }
+      }
+      activeKCSum += firedCount;
+      this.tick++;
+    }
+
+    const norm = Math.max(1, (this.nKC / 5) * 0.45);
+    for (let g = 0; g < 5; g++) {
+      this.mbonRate[g] = (mbonApproach[g] - mbonAvoid[g]) / norm;
+      dnSpikes += Math.round((mbonApproach[g] + mbonAvoid[g]) * 0.22);
+    }
+
+    this.lastActiveKC = activeKCSum / Math.max(1, steps);
+    return {
+      mbonApproach,
+      mbonAvoid,
+      dnSpikes,
+      sparsityPct: Math.min(100, (1 - this.lastActiveKC / this.nKC) * 100)
+    };
+  }
+
+  telemetry() {
+    let maxElig = 0, sumShort = 0, sumLong = 0;
+    let cApp = 0, cN = 0, aApp = 0, aN = 0, rApp = 0, rAvd = 0, rN = 0, sApp = 0, sN = 0;
+    for (let k = 0; k < this.nKC; k++) {
+      const eApp = k * 2;
+      const eAvd = k * 2 + 1;
+      if (this.elig[eApp] > maxElig) maxElig = this.elig[eApp];
+      sumShort += Math.abs(this.shortW[eApp]) + Math.abs(this.shortW[eAvd]);
+      sumLong += Math.abs(this.longW[eApp]) + Math.abs(this.longW[eAvd]);
+      const tag = this.kcCueTag[k];
+      if (tag === 0) { cApp += this.getFactor(eApp); cN++; }
+      else if (tag === 1) { aApp += this.getFactor(eApp); aN++; }
+      else if (tag === 2) { rApp += this.getFactor(eApp); rAvd += this.getFactor(eAvd); rN++; }
+      else if (tag === 4) { sApp += this.getFactor(eApp); sN++; }
+    }
+    return {
+      maxElig,
+      meanShort: sumShort / Math.max(1, this.nPlastic),
+      meanLong: sumLong / Math.max(1, this.nPlastic),
+      prefCyan: cApp / Math.max(1, cN),
+      prefAmber: aApp / Math.max(1, aN),
+      prefRed: rApp / Math.max(1, rN),
+      avoidRed: rAvd / Math.max(1, rN),
+      prefSky: sApp / Math.max(1, sN)
+    };
+  }
+}
+
+// ============================================================================
+// 4. Upgraded Three.js 3D Botanical Terrarium & Detailed Drosophila
+// ============================================================================
+const viewport = document.getElementById('viewport');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070a10);
+scene.fog = new THREE.FogExp2(0x070a10, 0.010);
+
+const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 180);
+let camMode = 'far'; // 'far' | 'orbit' | 'top' | 'follow'
+let camYaw = 0.72, camPitch = 0.58, camDist = 35.5;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+viewport.appendChild(renderer.domElement);
+
+// 3-Point Studio Lighting (transitions smoothly between Day and Night/Sleep)
+const hemiLight = new THREE.HemisphereLight(0xbbe0ff, 0x1b241f, 0.9);
+scene.add(hemiLight);
+
+const keyLight = new THREE.DirectionalLight(0xfff4e0, 1.35);
+keyLight.position.set(14, 26, 13);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.width = 1024;
+keyLight.shadow.mapSize.height = 1024;
+keyLight.shadow.camera.near = 2;
+keyLight.shadow.camera.far = 65;
+keyLight.shadow.camera.left = -19;
+keyLight.shadow.camera.right = 19;
+keyLight.shadow.camera.top = 19;
+keyLight.shadow.camera.bottom = -19;
+scene.add(keyLight);
+
+const rimLight = new THREE.PointLight(0x4f9cff, 0.75, 32);
+rimLight.position.set(-9, 7, -8);
+scene.add(rimLight);
+
+// Spacious Terrarium Dish & Tall Glass Enclosure (Radius 16.5)
+const ARENA_RADIUS = 16.5;
+const floorTex = makeFloorTexture();
+const floor = new THREE.Mesh(
+  new THREE.CylinderGeometry(ARENA_RADIUS, ARENA_RADIUS + 0.5, 0.7, 72),
+  new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.88, metalness: 0.06 })
+);
+floor.position.y = -0.35;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const rimMesh = new THREE.Mesh(
+  new THREE.TorusGeometry(ARENA_RADIUS + 0.05, 0.20, 14, 80),
+  new THREE.MeshStandardMaterial({ color: 0x3b485e, roughness: 0.35, metalness: 0.75 })
+);
+rimMesh.rotation.x = Math.PI / 2;
+rimMesh.position.y = 0.05;
+scene.add(rimMesh);
+
+const glassWall = new THREE.Mesh(
+  new THREE.CylinderGeometry(ARENA_RADIUS, ARENA_RADIUS, 8.2, 72, 1, true),
+  new THREE.MeshPhysicalMaterial({
+    color: 0x99ccff, transparent: true, opacity: 0.06, roughness: 0.1, metalness: 0.05, side: THREE.DoubleSide
+  })
+);
+glassWall.position.y = 4.1;
+scene.add(glassWall);
+
+// 3D Botanical Branches & Elevated Leaf Perches across the bigger habitat
+const woodMat = new THREE.MeshStandardMaterial({ color: 0x4b3625, roughness: 0.88 });
+const leafMat = new THREE.MeshStandardMaterial({ color: 0x2e6f48, roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide });
+
+const PERCHES = [
+  { id: 'leaf1', label: 'Folha Baixa',  x: -9.8, y: 2.3, z:  5.8, radius: 1.55 },
+  { id: 'leaf2', label: 'Folha Média',  x: 10.2, y: 3.6, z:  5.0, radius: 1.55 },
+  { id: 'leaf3', label: 'Galho Alto',   x: -1.8, y: 5.2, z: -9.6, radius: 1.50 }
+];
+
+function addBranchAndLeaf(baseX, baseZ, p) {
+  const start = new THREE.Vector3(baseX, 0, baseZ);
+  const end = new THREE.Vector3(p.x, p.y, p.z);
+  const mid = start.clone().lerp(end, 0.5);
+  mid.y += 0.65;
+  const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+  const branch = new THREE.Mesh(new THREE.TubeGeometry(curve, 18, 0.20, 8, false), woodMat);
+  branch.castShadow = true;
+  branch.receiveShadow = true;
+  scene.add(branch);
+
+  const leafGeo = new THREE.SphereGeometry(p.radius, 18, 12);
+  leafGeo.scale(1.28, 0.10, 0.84);
+  const leaf = new THREE.Mesh(leafGeo, leafMat);
+  leaf.position.set(p.x, p.y, p.z);
+  leaf.rotation.y = Math.atan2(p.z - baseZ, p.x - baseX);
+  leaf.castShadow = true;
+  leaf.receiveShadow = true;
+  scene.add(leaf);
+}
+
+addBranchAndLeaf(-13.8, 8.2, PERCHES[0]);
+addBranchAndLeaf( 14.0, 7.2, PERCHES[1]);
+addBranchAndLeaf( -4.2, -14.2, PERCHES[2]);
+
+// 3D Translucent Acrylic Maze Walls (walk around corridors OR fly over y > 2.6!)
+const mazeGroup = new THREE.Group();
+scene.add(mazeGroup);
+let mazeEnabled = true;
+
+const MAZE_WALLS = [
+  // Central T-divider creating left/right choice corridors
+  { x:  0.0, z: -3.2, w: 0.45, d: 6.4, h: 2.5 },
+  // Front corridor gates flanking the Red zone
+  { x: -4.8, z:  3.2, w: 5.2,  d: 0.45, h: 2.5 },
+  { x:  4.8, z:  3.2, w: 5.2,  d: 0.45, h: 2.5 },
+  // Outer baffles around Cyan & Amber chambers
+  { x:  7.8, z: -2.2, w: 0.45, d: 5.2, h: 2.5 },
+  { x: -7.8, z: -2.2, w: 0.45, d: 5.2, h: 2.5 },
+  // North chicane bar
+  { x:  0.0, z: -8.2, w: 6.8,  d: 0.45, h: 2.5 }
+];
+
+const mazeMat = new THREE.MeshPhysicalMaterial({
+  color: 0x60a5fa, emissive: 0x1e3a8a, emissiveIntensity: 0.18,
+  transparent: true, opacity: 0.34, roughness: 0.15, metalness: 0.1
+});
+const mazeTopMat = new THREE.MeshStandardMaterial({ color: 0x93c5fd, emissive: 0x3b82f6, emissiveIntensity: 0.35, roughness: 0.3 });
+
+for (const w of MAZE_WALLS) {
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(w.w, w.h, w.d), mazeMat);
+  wall.position.set(w.x, w.h / 2, w.z);
+  wall.castShadow = true;
+  wall.receiveShadow = true;
+  mazeGroup.add(wall);
+
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(w.w + 0.04, 0.08, w.d + 0.04), mazeTopMat);
+  cap.position.set(w.x, w.h + 0.04, w.z);
+  mazeGroup.add(cap);
+}
+
+// Decorative Terrarium Moss Rocks around perimeter
+const rockMat = new THREE.MeshStandardMaterial({ color: 0x2c3633, roughness: 0.92 });
+const mossMat = new THREE.MeshStandardMaterial({ color: 0x2a523c, roughness: 0.95 });
+const rockPositions = [
+  [-12.8, 0.4, 7.2, 1.4], [12.4, 0.35, 8.1, 1.2], [-11.8, 0.38, -8.8, 1.25], [12.5, 0.32, -7.8, 1.1]
+];
+for (const [rx, ry, rz, sc] of rockPositions) {
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(sc, 1), rockMat);
+  rock.scale.set(1.2, 0.65, 1.0);
+  rock.position.set(rx, ry, rz);
+  rock.castShadow = true;
+  rock.receiveShadow = true;
+  scene.add(rock);
+
+  const moss = new THREE.Mesh(new THREE.SphereGeometry(sc * 0.55, 10, 8), mossMat);
+  moss.scale.set(1.3, 0.45, 1.1);
+  moss.position.set(rx + 0.2, ry + sc * 0.32, rz);
+  scene.add(moss);
+}
+
+// Floating Ambient Dust Motes
+const dustCount = 90;
+const dustGeo = new THREE.BufferGeometry();
+const dustCoords = new Float32Array(dustCount * 3);
+for (let i = 0; i < dustCount; i++) {
+  const a = Math.random() * Math.PI * 2;
+  const r = Math.random() * 9.8;
+  dustCoords[i * 3] = Math.cos(a) * r;
+  dustCoords[i * 3 + 1] = 0.6 + Math.random() * 4.5;
+  dustCoords[i * 3 + 2] = Math.sin(a) * r;
+}
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustCoords, 3));
+const dustPoints = new THREE.Points(
+  dustGeo,
+  new THREE.PointsMaterial({ color: 0xcbe4ff, size: 0.08, transparent: true, opacity: 0.35 })
+);
+scene.add(dustPoints);
+
+// 4 Training Zones (3 Floor + 1 Elevated Aerial Violet Ring)
+const ZONES = [
+  { id: 'cyan',  label: 'Anel Ciano',          color: 0x38bdf8, x:  10.8, y: 0.0, z: -5.4, radius: 2.6, aerial: false, cueIdx: 0 },
+  { id: 'amber', label: 'Anel Âmbar',          color: 0xfbbf24, x: -10.8, y: 0.0, z: -5.4, radius: 2.6, aerial: false, cueIdx: 1 },
+  { id: 'red',   label: 'Zona Vermelha',       color: 0xfb7185, x:   0.0, y: 0.0, z:  9.2, radius: 2.6, aerial: false, cueIdx: 2 },
+  { id: 'sky',   label: 'Anel Aéreo (Violeta)', color: 0xc084fc, x:   0.0, y: 4.5, z: -1.2, radius: 2.3, aerial: true,  cueIdx: 4 }
+];
+
+for (const z of ZONES) {
+  if (!z.aerial) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(z.radius - 0.16, z.radius, 56),
+      new THREE.MeshBasicMaterial({ color: z.color, side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(z.x, 0.04, z.z);
+    scene.add(ring);
+
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(z.radius - 0.16, 56),
+      new THREE.MeshBasicMaterial({ color: z.color, transparent: true, opacity: 0.11 })
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.set(z.x, 0.02, z.z);
+    scene.add(disc);
+  } else {
+    // Floating 3D Aerial Torus Ring + faint vertical depth beam
+    const torus = new THREE.Mesh(
+      new THREE.TorusGeometry(z.radius * 0.72, 0.10, 14, 48),
+      new THREE.MeshStandardMaterial({ color: z.color, emissive: z.color, emissiveIntensity: 0.55, roughness: 0.25 })
+    );
+    torus.rotation.x = Math.PI / 2;
+    torus.position.set(z.x, z.y, z.z);
+    scene.add(torus);
+
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(z.radius * 0.72, z.radius * 0.72, z.y, 32, 1, true),
+      new THREE.MeshBasicMaterial({ color: z.color, transparent: true, opacity: 0.05, side: THREE.DoubleSide, depthWrite: false })
+    );
+    beam.position.set(z.x, z.y / 2, z.z);
+    scene.add(beam);
+  }
+
+  const crystal = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.28, 0),
+    new THREE.MeshStandardMaterial({ color: z.color, emissive: z.color, emissiveIntensity: 0.55, roughness: 0.2 })
+  );
+  crystal.position.set(z.x, z.y + 0.55, z.z);
+  scene.add(crystal);
+  z.crystal = crystal;
+}
+
+// Interactive Nectar Drop (Pet Food) & Pushable Play Ball (Harvard 2026 study!)
+const nectarGroup = new THREE.Group();
+const nectarMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.48, 24, 18),
+  new THREE.MeshPhysicalMaterial({
+    color: 0x4ade80, emissive: 0x166534, emissiveIntensity: 0.42,
+    roughness: 0.08, metalness: 0.05, transparent: true, opacity: 0.90
+  })
+);
+nectarMesh.scale.set(1.25, 0.55, 1.25);
+nectarMesh.position.y = 0.20;
+nectarMesh.castShadow = true;
+nectarGroup.add(nectarMesh);
+nectarGroup.visible = false;
+scene.add(nectarGroup);
+
+let nectarState = { active: false, x: 0, z: 0, amount: 0 };
+
+// User-placed 3D Obstacles & Click-to-Call target
+const customGroup = new THREE.Group();
+scene.add(customGroup);
+let customPillars = []; // { x, z, r, h, mesh }
+let callTarget = { active: false, x: 0, z: 0, timer: 0 };
+
+const callRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.4, 0.65, 32),
+  new THREE.MeshBasicMaterial({ color: 0x60a5fa, side: THREE.DoubleSide, transparent: true, opacity: 0 })
+);
+callRing.rotation.x = -Math.PI / 2;
+callRing.position.y = 0.08;
+scene.add(callRing);
+
+const BALL_R = 0.54;
+const ballMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(BALL_R, 28, 28),
+  new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.22, metalness: 0.18, emissive: 0x831843, emissiveIntensity: 0.38 })
+);
+ballMesh.castShadow = true;
+ballMesh.position.set(3.2, BALL_R, 0.8);
+scene.add(ballMesh);
+let ballState = { x: 3.2, z: 0.8, vx: 0, vz: 0 };
+
+// Detailed Anatomical 3D Drosophila
+const flyGroup = new THREE.Group();
+scene.add(flyGroup);
+
+const chitinMat = new THREE.MeshStandardMaterial({ color: 0xdfa64c, roughness: 0.36, metalness: 0.14 });
+const darkBandMat = new THREE.MeshStandardMaterial({ color: 0x261a10, roughness: 0.45, metalness: 0.2 });
+const eyeMat = new THREE.MeshStandardMaterial({ map: makeEyeTexture(), roughness: 0.2, metalness: 0.25, emissive: 0x450a14, emissiveIntensity: 0.35 });
+const wingMat = new THREE.MeshPhysicalMaterial({
+  map: makeWingTexture(), transparent: true, opacity: 0.85, roughness: 0.1, metalness: 0.1, side: THREE.DoubleSide, depthWrite: false
+});
+const legMat = new THREE.MeshStandardMaterial({ color: 0x3b2919, roughness: 0.55 });
+
+// Thorax + Scutellum
+const thorax = new THREE.Mesh(new THREE.SphereGeometry(0.44, 24, 18), chitinMat);
+thorax.scale.set(1.18, 0.92, 0.86);
+thorax.position.set(0.06, 0.56, 0);
+thorax.castShadow = true;
+flyGroup.add(thorax);
+
+// Abdomen + Tergite Stripes
+const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.54, 24, 18), chitinMat);
+abdomen.scale.set(1.42, 0.86, 0.86);
+abdomen.position.set(-0.74, 0.50, 0);
+abdomen.castShadow = true;
+flyGroup.add(abdomen);
+
+for (let i = 0; i < 4; i++) {
+  const radius = Math.max(0.18, 0.42 - i * 0.06);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.042, 10, 24), darkBandMat);
+  band.rotation.y = Math.PI / 2;
+  band.position.set(-0.46 - i * 0.21, 0.50 - i * 0.015, 0);
+  flyGroup.add(band);
+}
+
+// Head, Faceted Compound Eyes, Antennae & Extendable Proboscis
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.31, 20, 16), chitinMat);
+head.position.set(0.65, 0.60, 0);
+head.castShadow = true;
+flyGroup.add(head);
+
+const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.19, 18, 16), eyeMat);
+eyeL.scale.set(0.95, 1.15, 0.85);
+eyeL.position.set(0.72, 0.64, -0.23);
+const eyeR = eyeL.clone();
+eyeR.position.z = 0.23;
+flyGroup.add(eyeL, eyeR);
+
+// Antennae
+for (const side of [-1, 1]) {
+  const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.025, 0.24, 6), darkBandMat);
+  ant.position.set(0.94, 0.68, side * 0.10);
+  ant.rotation.z = -1.05;
+  ant.rotation.y = side * 0.35;
+  flyGroup.add(ant);
+}
+
+// Extendable Proboscis (extends when feeding on nectar!)
+const proboscis = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, 0.30, 8), darkBandMat);
+proboscis.position.set(0.78, 0.38, 0);
+proboscis.rotation.z = 0.4;
+proboscis.scale.y = 0.35;
+flyGroup.add(proboscis);
+
+// Veined Translucent Wings
+const wingPlaneGeo = new THREE.PlaneGeometry(1.55, 0.72);
+const wingPivotL = new THREE.Group();
+wingPivotL.position.set(0.06, 0.88, -0.18);
+const wingL = new THREE.Mesh(wingPlaneGeo, wingMat);
+wingL.rotation.x = -Math.PI / 2;
+wingL.position.set(-0.62, 0, -0.22);
+wingPivotL.add(wingL);
+
+const wingPivotR = new THREE.Group();
+wingPivotR.position.set(0.06, 0.88, 0.18);
+const wingR = new THREE.Mesh(wingPlaneGeo, wingMat);
+wingR.rotation.x = -Math.PI / 2;
+wingR.position.set(-0.62, 0, 0.22);
+wingPivotR.add(wingR);
+flyGroup.add(wingPivotL, wingPivotR);
+
+// 6 Multi-segmented Articulated Legs (Femur + Tibia)
+const legs = [];
+const legOffsetsX = [0.30, 0.02, -0.28];
+for (const side of [-1, 1]) {
+  for (let i = 0; i < 3; i++) {
+    const pivot = new THREE.Group();
+    pivot.position.set(legOffsetsX[i], 0.38, side * 0.26);
+    const femur = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.022, 0.42, 6), legMat);
+    femur.position.set(0, -0.10, side * 0.18);
+    femur.rotation.x = side * 1.05;
+    const tibia = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.012, 0.46, 6), legMat);
+    tibia.position.set(0, -0.34, side * 0.36);
+    tibia.rotation.x = side * 0.28;
+    pivot.add(femur, tibia);
+    flyGroup.add(pivot);
+    const tripodGroup = ((side === -1 && i % 2 === 0) || (side === 1 && i % 2 === 1)) ? 0 : Math.PI;
+    legs.push({ pivot, tripodGroup, side });
+  }
+}
+
+// 3D Trail Line
+const MAX_TRAIL = 130;
+const trailPos = new Float32Array(MAX_TRAIL * 3);
+const trailGeo = new THREE.BufferGeometry();
+trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
+const trailLine = new THREE.Line(
+  trailGeo,
+  new THREE.LineBasicMaterial({ color: 0x4f9cff, transparent: true, opacity: 0.55 })
+);
+scene.add(trailLine);
+
+// Reinforcement Pulse Ring
+const pulseRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.65, 0.92, 36),
+  new THREE.MeshBasicMaterial({ color: 0x34d399, side: THREE.DoubleSide, transparent: true, opacity: 0 })
+);
+pulseRing.rotation.x = -Math.PI / 2;
+pulseRing.position.y = 0.14;
+scene.add(pulseRing);
+
+// ============================================================================
+// 5. Pet Vitals, Training Missions & Simulation Loop
+// ============================================================================
+let brain = new ArchitecturalFlyBrain('drosophila', 42);
+let running = true;
+let sleeping = false;
+let pendingMod = 0;
+let flashAlpha = 0;
+let legPhase = 0;
+let wingPhase = 0;
+let clockSec = 0;
+
+let flyPos = { x: 0, y: 1.2, z: 0, vy: 0, angle: -0.4, flying: true, perchId: null };
+let flightBoostTimer = 0;
+let trailPoints = [];
+let pet = { energy: 0.78, rest: 0.82, curiosity: 0.65, bond: 0.20 };
+let score = 0, streak = 0, missionIdx = 0, missionHits = 0;
+let lastZoneId = null;
+
+const MISSIONS = [
+  {
+    title: 'Desafio 1: Preferência pelo Alvo Ciano',
+    desc: 'Aplique +1 (PAM) no Anel Ciano e -1 (PPL1) na Zona Vermelha. Depois clique em Descansar para consolidar em LTM.',
+    target: 'cyan', avoid: 'red', goal: 5
+  },
+  {
+    title: 'Desafio 2: Voo ao Anel Aéreo (Violeta)',
+    desc: 'Use Decolar (Voo 3D) e aplique +1 (PAM) quando a mosca passar pelo Anel Aéreo flutuante! Ela aprenderá a subir e pairar lá.',
+    target: 'sky', avoid: 'red', goal: 5
+  },
+  {
+    title: 'Desafio 3: Reversão de Regra (Alvo Âmbar)',
+    desc: 'Mude o treino! Recompense (+1) o Anel Âmbar e desencoraje (-1) o Ciano. Teste a separação na camada Super-Colônia.',
+    target: 'amber', avoid: 'cyan', goal: 5
+  },
+  {
+    title: 'Modo Pet Livre: Voo, Poleiros & Brincadeira',
+    desc: 'Desafios completos! Alimente com néctar, jogue a bolinha, deixe-a pousar nas folhas elevadas e molde o pet do seu jeito.',
+    target: 'sky', avoid: 'red', goal: 10
+  }
+];
+
+const statusLine = document.getElementById('status-line');
+
+function detectZone() {
+  for (const z of ZONES) {
+    const dXZ = Math.hypot(flyPos.x - z.x, flyPos.z - z.z);
+    const dY = Math.abs(flyPos.y - z.y);
+    if (dXZ <= z.radius && dY <= (z.aerial ? 1.35 : 1.15)) return z;
+  }
+  return null;
+}
+
+function detectPerch() {
+  for (const p of PERCHES) {
+    const dXZ = Math.hypot(flyPos.x - p.x, flyPos.z - p.z);
+    const dY = Math.abs(flyPos.y - p.y);
+    if (dXZ <= p.radius && dY <= 0.65) return p;
+  }
+  return null;
+}
+
+function updateMissionUI() {
+  const m = MISSIONS[Math.min(missionIdx, MISSIONS.length - 1)];
+  document.getElementById('mission-title').textContent = m.title;
+  document.getElementById('mission-desc').textContent = m.desc;
+  document.getElementById('v-mission').textContent = `${missionHits} / ${m.goal} acertos`;
+  document.getElementById('b-mission').style.width = `${Math.min(100, (missionHits / m.goal) * 100)}%`;
+  document.getElementById('hud-score').innerHTML = `Pontos: <strong>${score}</strong> · Sequência: <strong>${streak}</strong>`;
+}
+
+function computePersonality(tel) {
+  if (sleeping) return 'Dormindo (LTM)';
+  if (pet.energy < 0.28) return 'Faminta';
+  if (pet.rest < 0.25) return 'Exausta';
+  if (tel.prefSky > 1.22) return 'Acrobata Aérea!';
+  if (tel.prefRed > 1.22) return 'Viciada no Vermelho!';
+  if (tel.prefCyan > 1.22 && tel.avoidRed > 1.15) return 'Disciplinada (Ciano)';
+  if (tel.prefAmber > 1.22) return 'Focada no Âmbar';
+  if (pet.curiosity > 0.65 && pet.energy > 0.65) return 'Brincalhona';
+  return 'Exploradora';
+}
+
+function triggerReinforcement(val) {
+  if (sleeping) {
+    statusLine.textContent = 'Seu pet está dormindo para consolidar memória longa. Acorde-a primeiro.';
+    return;
+  }
+  pendingMod = val;
+  flashAlpha = 0.95;
+  pulseRing.material.color.setHex(val > 0 ? 0x34d399 : 0xfb7185);
+  pulseRing.position.set(flyPos.x, flyPos.y + 0.14, flyPos.z);
+  pulseRing.scale.set(1, 1, 1);
+
+  if (val > 0) {
+    pet.bond = Math.min(1.0, pet.bond + 0.045);
+    playTone(680, 0.12, 'triangle', 0.09);
+  } else {
+    pet.bond = Math.max(0.0, pet.bond - 0.02);
+    playTone(205, 0.15, 'sawtooth', 0.08);
+  }
+
+  const m = MISSIONS[Math.min(missionIdx, MISSIONS.length - 1)];
+  const current = detectZone();
+  if (current) {
+    if ((val > 0 && current.id === m.target) || (val < 0 && current.id === m.avoid)) {
+      score += 10 + streak * 2;
+      streak++;
+      missionHits++;
+      statusLine.textContent = `Reforço ${val > 0 ? '+1 (PAM)' : '-1 (PPL1)'} aplicado em ${current.label}!`;
+      if (missionHits >= m.goal && missionIdx < MISSIONS.length - 1) {
+        missionIdx++;
+        missionHits = 0;
+        playTone(880, 0.22, 'sine', 0.1);
+        statusLine.textContent = 'Desafio concluído! Nova etapa de adestramento liberada.';
+      }
+    } else {
+      streak = 0;
+      statusLine.textContent = `Reforço ${val > 0 ? '+1' : '-1'} em ${current.label} — ela vai aprender exatamente o que você reforçar!`;
+    }
+  } else {
+    statusLine.textContent = `Clicker ${val > 0 ? '+1 (PAM)' : '-1 (PPL1)'} disparado no centro.`;
+  }
+  updateMissionUI();
+}
+
+function stepSimulation() {
+  clockSec += 0.016;
+
+  // Animate crystals & ambient lighting for Day/Night
+  for (let i = 0; i < ZONES.length; i++) {
+    ZONES[i].crystal.rotation.y += 0.025;
+    ZONES[i].crystal.position.y = ZONES[i].y + 0.55 + Math.sin(clockSec * 2.5 + i) * 0.08;
+  }
+  const targetKeyInt = sleeping ? 0.35 : 1.35;
+  keyLight.intensity += (targetKeyInt - keyLight.intensity) * 0.06;
+  hemiLight.intensity += ((sleeping ? 0.4 : 0.9) - hemiLight.intensity) * 0.06;
+
+  // Pet homeostasis
+  if (sleeping) {
+    pet.rest = Math.min(1.0, pet.rest + 0.0022);
+    pet.energy = Math.max(0.05, pet.energy - 0.0001);
+  } else {
+    pet.rest = Math.max(0.05, pet.rest - 0.00045);
+    pet.energy = Math.max(0.05, pet.energy - 0.00038);
+  }
+  pet.curiosity = Math.max(0.05, Math.min(1.0, pet.energy * pet.rest * (0.55 + 0.45 * pet.bond)));
+
+  // 3D Sensory cues (3 floor zones + 1 aerial sky ring + play ball)
+  const cues = { cyan: 0, amber: 0, red: 0, ball: 0, sky: 0 };
+  for (const z of ZONES) {
+    const d3 = Math.hypot(flyPos.x - z.x, flyPos.y - z.y, flyPos.z - z.z);
+    cues[z.id] = Math.max(0, 1.0 - d3 / 11.5);
+  }
+  const distBall = Math.hypot(flyPos.x - ballState.x, flyPos.y, flyPos.z - ballState.z);
+  cues.ball = Math.max(0, 1.0 - distBall / 9.0);
+
+  const modToApply = sleeping ? 0 : pendingMod;
+  pendingMod = 0;
+  const cons = sleeping ? 0.85 : 0.02;
+
+  const out = brain.stepWindow(cues, modToApply, cons, !sleeping, 15.0);
+
+  // 3D Emergent steering (X, Y altitude, Z)
+  let desiredX = 0, desiredY = 0, desiredZ = 0;
+  let actionLabel = flyPos.y > 0.45 ? 'Voando em 3D' : 'Explorando';
+
+  let settledZone = null;
+  let arrivalDamping = 1.0;
+  for (let i = 0; i < ZONES.length; i++) {
+    const z = ZONES[i];
+    const dx = z.x - flyPos.x;
+    const dy = z.y - flyPos.y;
+    const dz = z.z - flyPos.z;
+    const rawDist = Math.hypot(dx, dy, dz);
+    const val = brain.mbonRate[z.cueIdx];
+    if (val > 0.10 && rawDist < 1.8) {
+      const factor = Math.max(0.0, (rawDist - 0.55) / 1.25);
+      arrivalDamping = Math.min(arrivalDamping, 0.12 + 0.88 * factor);
+      if (rawDist < 0.95) settledZone = z;
+      if (rawDist > 0.55) {
+        desiredX += (dx / rawDist) * val * 1.35 * factor;
+        desiredY += (dy / rawDist) * val * 1.35 * factor;
+        desiredZ += (dz / rawDist) * val * 1.35 * factor;
+      }
+    } else {
+      const dist = Math.max(0.5, rawDist);
+      desiredX += (dx / dist) * val * 1.45;
+      desiredY += (dy / dist) * val * 1.45;
+      desiredZ += (dz / dist) * val * 1.45;
+    }
+  }
+
+  // Slight pull toward nearest elevated leaf perch when rest is low or curious
+  let nearestPerch = null, nearestPerchD = 999;
+  for (const p of PERCHES) {
+    const dp = Math.hypot(flyPos.x - p.x, flyPos.y - p.y, flyPos.z - p.z);
+    if (dp < nearestPerchD) { nearestPerchD = dp; nearestPerch = p; }
+  }
+  if (!sleeping && pet.rest < 0.45 && nearestPerch && !nectarState.active) {
+    desiredX += ((nearestPerch.x - flyPos.x) / Math.max(0.5, nearestPerchD)) * 0.75;
+    desiredY += ((nearestPerch.y + 0.12 - flyPos.y) / Math.max(0.5, nearestPerchD)) * 0.85;
+    desiredZ += ((nearestPerch.z - flyPos.z) / Math.max(0.5, nearestPerchD)) * 0.75;
+  }
+
+  let feedingNow = false;
+  if (nectarState.active && !sleeping) {
+    const dx = nectarState.x - flyPos.x;
+    const dz = nectarState.z - flyPos.z;
+    const dN = Math.hypot(dx, dz);
+    const hungerPull = (1.15 - pet.energy) * 2.4;
+    desiredX += (dx / Math.max(0.4, dN)) * hungerPull;
+    desiredY += ((0.0 - flyPos.y) / Math.max(0.4, dN)) * hungerPull;
+    desiredZ += (dz / Math.max(0.4, dN)) * hungerPull;
+    if (dN < 1.15 && flyPos.y < 0.6) {
+      feedingNow = true;
+      actionLabel = 'Alimentando-se (MN9)';
+      pet.energy = Math.min(1.0, pet.energy + 0.008);
+      pet.bond = Math.min(1.0, pet.bond + 0.0012);
+      nectarState.amount -= 0.006;
+      nectarMesh.scale.set(1.2 * Math.max(0.25, nectarState.amount), 0.55 * Math.max(0.25, nectarState.amount), 1.2 * Math.max(0.25, nectarState.amount));
+      if (nectarState.amount <= 0.05) {
+        nectarState.active = false;
+        nectarGroup.visible = false;
+        statusLine.textContent = 'Seu pet terminou a gota de néctar!';
+      }
+    }
+  } else if (!sleeping && callTarget.active) {
+    const dx = callTarget.x - flyPos.x;
+    const dz = callTarget.z - flyPos.z;
+    const dC = Math.hypot(dx, dz);
+    desiredX += (dx / Math.max(0.4, dC)) * 2.2;
+    desiredZ += (dz / Math.max(0.4, dC)) * 2.2;
+    actionLabel = 'Indo ao ponto clicado';
+    callTarget.timer--;
+    callRing.material.opacity = Math.min(0.85, callTarget.timer / 40);
+    const sRing = 1 + (1 - callTarget.timer / 140) * 1.4;
+    callRing.scale.set(sRing, sRing, 1);
+    if (dC < 1.1 || callTarget.timer <= 0) {
+      callTarget.active = false;
+      callRing.material.opacity = 0;
+    }
+  } else if (!sleeping && pet.curiosity > 0.45 && distBall < 7.5) {
+    const dx = ballState.x - flyPos.x;
+    const dz = ballState.z - flyPos.z;
+    const playPull = pet.curiosity * (1.0 + Math.max(0, brain.mbonRate[3]));
+    desiredX += (dx / Math.max(0.4, distBall)) * playPull * 0.9;
+    desiredZ += (dz / Math.max(0.4, distBall)) * playPull * 0.9;
+    if (distBall < 1.1) {
+      actionLabel = 'Brincando com a Bolinha';
+      ballState.vx += (dx / Math.max(0.2, distBall)) * 0.09;
+      ballState.vz += (dz / Math.max(0.2, distBall)) * 0.09;
+      pet.bond = Math.min(1.0, pet.bond + 0.001);
+    }
+  }
+
+  function resolveMazeCollision(obj, rad, bounceVel = false) {
+    if (!mazeEnabled) return false;
+    let hit = false;
+    for (const w of MAZE_WALLS) {
+      const hx = w.w * 0.5 + rad;
+      const hz = w.d * 0.5 + rad;
+      const dx = obj.x - w.x;
+      const dz = obj.z - w.z;
+      if (Math.abs(dx) < hx && Math.abs(dz) < hz) {
+        const ox = hx - Math.abs(dx);
+        const oz = hz - Math.abs(dz);
+        if (ox < oz) {
+          obj.x += dx >= 0 ? ox : -ox;
+          if (bounceVel) obj.vx = -obj.vx * 0.8;
+        } else {
+          obj.z += dz >= 0 ? oz : -oz;
+          if (bounceVel) obj.vz = -obj.vz * 0.8;
+        }
+        hit = true;
+      }
+    }
+    for (const p of customPillars) {
+      const dx = obj.x - p.x;
+      const dz = obj.z - p.z;
+      const dist = Math.hypot(dx, dz);
+      const minD = p.r + rad;
+      if (dist < minD && dist > 1e-4) {
+        const push = minD - dist;
+        obj.x += (dx / dist) * push;
+        obj.z += (dz / dist) * push;
+        if (bounceVel) {
+          const nx = dx / dist, nz = dz / dist;
+          const dot = obj.vx * nx + obj.vz * nz;
+          obj.vx -= 1.8 * dot * nx;
+          obj.vz -= 1.8 * dot * nz;
+        }
+        hit = true;
+      }
+    }
+    return hit;
+  }
+
+  // Ball physics with maze wall collisions
+  ballState.x += ballState.vx;
+  ballState.z += ballState.vz;
+  ballState.vx *= 0.94;
+  ballState.vz *= 0.94;
+  resolveMazeCollision(ballState, BALL_R, true);
+  const br = Math.hypot(ballState.x, ballState.z);
+  const maxBallR = ARENA_RADIUS - 1.1;
+  if (br > maxBallR) {
+    const nx = ballState.x / br, nz = ballState.z / br;
+    ballState.x = nx * maxBallR; ballState.z = nz * maxBallR;
+    const dot = ballState.vx * nx + ballState.vz * nz;
+    ballState.vx -= 1.8 * dot * nx;
+    ballState.vz -= 1.8 * dot * nz;
+  }
+  ballMesh.position.set(ballState.x, BALL_R, ballState.z);
+  ballMesh.rotation.x += ballState.vz * 1.3;
+  ballMesh.rotation.z -= ballState.vx * 1.3;
+
+  // Move fly in full 3D (walking, flying, hovering, or perching on leaves)
+  const perchedOn = (!feedingNow && !sleeping && flightBoostTimer <= 0) ? detectPerch() : null;
+  const investigatingZone = (!feedingNow && !sleeping && settledZone !== null);
+  const isAirborne = flyPos.y > 0.28 && !perchedOn;
+
+  if (investigatingZone) {
+    actionLabel = settledZone.aerial
+      ? `Pairando no ${settledZone.label}`
+      : `Pousada / Investigando (${settledZone.label})`;
+  } else if (perchedOn && pet.rest < 0.72) {
+    actionLabel = `Pousada na ${perchedOn.label}`;
+  }
+
+  if (flightBoostTimer > 0) flightBoostTimer--;
+
+  if (!sleeping) {
+    const pullMag = Math.hypot(desiredX, desiredZ);
+    const noiseScale = investigatingZone ? 0.05 : 0.19;
+    let steer = (brain.rng.next() - 0.5) * noiseScale;
+    if (pullMag > 0.06) {
+      const targetAngle = Math.atan2(desiredZ, desiredX);
+      const diff = Math.atan2(Math.sin(targetAngle - flyPos.angle), Math.cos(targetAngle - flyPos.angle));
+      const maxTurn = investigatingZone ? 0.06 : 0.18;
+      steer += Math.max(-maxTurn, Math.min(maxTurn, diff * 0.22));
+    }
+    flyPos.angle = (flyPos.angle + steer) % (Math.PI * 2);
+
+    const restingOnLeaf = (perchedOn !== null && pet.rest < 0.72 && Math.abs(desiredY) < 0.35);
+    const baseSpeed = (0.08 + Math.min(0.085, out.dnSpikes * 0.002)) * (0.45 + 0.55 * pet.rest);
+    const speed = feedingNow ? 0.015 : (restingOnLeaf ? 0.004 : (investigatingZone ? 0.009 : baseSpeed * arrivalDamping));
+    flyPos.x += Math.cos(flyPos.angle) * speed;
+    flyPos.z += Math.sin(flyPos.angle) * speed;
+
+    // 3D Vertical altitude control
+    let targetY = flyPos.y;
+    if (feedingNow) {
+      targetY = 0.0;
+    } else if (restingOnLeaf) {
+      targetY = perchedOn.y + 0.14;
+      pet.rest = Math.min(1.0, pet.rest + 0.0012);
+    } else if (investigatingZone) {
+      targetY = settledZone.aerial ? settledZone.y + Math.sin(clockSec * 5.0) * 0.15 : 0.0;
+    } else if (flightBoostTimer > 0) {
+      targetY = 3.5 + Math.sin(clockSec * 2.4) * 0.5;
+    } else {
+      // Natural autonomous 3D altitude drift + neural vertical pull
+      const verticalWander = Math.sin(clockSec * 0.65) * 0.045 + (brain.rng.next() - 0.5) * 0.07;
+      targetY = Math.max(0.0, Math.min(5.2, flyPos.y + desiredY * 0.14 + verticalWander));
+    }
+    flyPos.vy = (targetY - flyPos.y) * 0.14;
+    flyPos.y = Math.max(0.0, Math.min(5.4, flyPos.y + flyPos.vy));
+
+    // Collide with maze walls if flying/walking below wall top (y < 2.65)
+    if (flyPos.y < 2.65) {
+      const hitWall = resolveMazeCollision(flyPos, 0.55, false);
+      if (hitWall) {
+        flyPos.angle = (flyPos.angle + (brain.rng.next() > 0.5 ? 0.65 : -0.65)) % (Math.PI * 2);
+      }
+    }
+
+    const r = Math.hypot(flyPos.x, flyPos.z);
+    const maxFlyR = ARENA_RADIUS - 1.2;
+    if (r > maxFlyR) {
+      const normalAngle = Math.atan2(-flyPos.z, -flyPos.x);
+      flyPos.x = (flyPos.x / r) * maxFlyR;
+      flyPos.z = (flyPos.z / r) * maxFlyR;
+      flyPos.angle = normalAngle + (brain.rng.next() - 0.5) * 0.5;
+    }
+
+    const flyingNow = (flyPos.y > 0.25 && !restingOnLeaf);
+    wingPhase += flyingNow ? 2.15 : ((feedingNow || investigatingZone || restingOnLeaf) ? 0.14 : 0.85);
+    legPhase += flyingNow ? 0.1 : speed * 8.0;
+  } else {
+    actionLabel = 'Dormindo (Replay LTM)';
+    // Descend gently to floor or stay on current leaf perch
+    const sleepFloor = (nearestPerch && nearestPerchD < 1.5) ? nearestPerch.y + 0.14 : 0.0;
+    flyPos.y += (sleepFloor - flyPos.y) * 0.08;
+    flyPos.vy = 0;
+  }
+
+  // Update 3D body, pitch tilt & articulations
+  flyGroup.position.set(flyPos.x, flyPos.y, flyPos.z);
+  flyGroup.rotation.y = -flyPos.angle;
+  flyGroup.rotation.z = Math.max(-0.32, Math.min(0.32, flyPos.vy * 2.2));
+  proboscis.scale.y = feedingNow ? 1.15 : ((investigatingZone && !settledZone.aerial) ? 0.65 : 0.35);
+
+  const flyingVisual = (!sleeping && flyPos.y > 0.25 && !(perchedOn && pet.rest < 0.72));
+  const wingFlap = sleeping
+    ? 0.06
+    : (flyingVisual
+        ? 0.45 + Math.sin(wingPhase) * 0.62
+        : ((feedingNow || investigatingZone) ? 0.10 + Math.sin(wingPhase) * 0.04 : 0.24 + Math.sin(wingPhase) * 0.30));
+  wingPivotL.rotation.x = wingFlap;
+  wingPivotR.rotation.x = -wingFlap;
+  for (const leg of legs) {
+    leg.pivot.rotation.z = (sleeping || feedingNow || flyingVisual) ? (flyingVisual ? -0.35 : 0) : Math.sin(legPhase + leg.tripodGroup) * 0.4;
+  }
+
+  // 3D Trail follows true altitude!
+  trailPoints.push([flyPos.x, flyPos.y + 0.22, flyPos.z]);
+  if (trailPoints.length > MAX_TRAIL) trailPoints.shift();
+  for (let i = 0; i < MAX_TRAIL; i++) {
+    const pt = trailPoints[Math.min(i, trailPoints.length - 1)] || [0, 0.07, 0];
+    trailPos[i * 3] = pt[0]; trailPos[i * 3 + 1] = pt[1]; trailPos[i * 3 + 2] = pt[2];
+  }
+  trailGeo.attributes.position.needsUpdate = true;
+
+  // Pulse ring
+  if (flashAlpha > 0.01) {
+    flashAlpha *= 0.88;
+    pulseRing.material.opacity = flashAlpha;
+    const sc = 1 + (1 - flashAlpha) * 2.5;
+    pulseRing.scale.set(sc, sc, 1);
+  } else {
+    pulseRing.material.opacity = 0;
+  }
+
+  // HUD & Telemetry
+  const zNow = detectZone();
+  const zName = sleeping ? 'Repouso Noturno (dFB ON)' : (zNow ? zNow.label : 'Terrário Aberto');
+  document.getElementById('hud-zone').innerHTML = `Zona atual: <strong>${zName}</strong>`;
+  document.getElementById('hud-action').innerHTML = `Ação: <strong>${actionLabel}</strong> · Altitude: <strong>${(flyPos.y * 2.0).toFixed(1)} cm</strong>`;
+
+  const tel = brain.telemetry();
+  if (zNow && zNow.id !== lastZoneId) {
+    const m = MISSIONS[Math.min(missionIdx, MISSIONS.length - 1)];
+    if (zNow.id === m.target && tel.prefCyan > 1.15) { score += 5; updateMissionUI(); }
+  }
+  lastZoneId = zNow ? zNow.id : null;
+
+  document.getElementById('pet-personality').textContent = computePersonality(tel);
+  document.getElementById('v-energy').textContent = `${Math.round(pet.energy * 100)}%`;
+  document.getElementById('b-energy').style.width = `${Math.round(pet.energy * 100)}%`;
+  document.getElementById('v-rest').textContent = `${Math.round(pet.rest * 100)}%`;
+  document.getElementById('b-rest').style.width = `${Math.round(pet.rest * 100)}%`;
+  document.getElementById('v-curiosity').textContent = `${Math.round(pet.curiosity * 100)}%`;
+  document.getElementById('b-curiosity').style.width = `${Math.round(pet.curiosity * 100)}%`;
+  document.getElementById('v-bond').textContent = `${Math.round(pet.bond * 100)}%`;
+  document.getElementById('b-bond').style.width = `${Math.round(pet.bond * 100)}%`;
+
+  document.getElementById('m-time').textContent = `${(brain.tick * brain.dt).toFixed(0)} ms`;
+  document.getElementById('m-sparse').textContent = `${out.sparsityPct.toFixed(0)}%`;
+  document.getElementById('m-pref-cyan').textContent = `${tel.prefCyan.toFixed(3)}x`;
+  document.getElementById('m-pref-red').textContent = `${tel.prefRed.toFixed(3)}x`;
+  document.getElementById('m-short').textContent = tel.meanShort.toFixed(3);
+  document.getElementById('m-long').textContent = tel.meanLong.toFixed(3);
+
+  const eligPct = Math.round(tel.maxElig * 100);
+  document.getElementById('v-elig').textContent = `${eligPct}%`;
+  document.getElementById('b-elig').style.width = `${eligPct}%`;
+
+  const cap = Math.max(10, brain.nKC * 0.22);
+  document.getElementById('v-mbon-c').textContent = out.mbonApproach[0].toFixed(1);
+  document.getElementById('b-mbon-c').style.width = `${Math.min(100, (out.mbonApproach[0] / cap) * 100)}%`;
+  document.getElementById('v-mbon-a').textContent = out.mbonApproach[1].toFixed(1);
+  document.getElementById('b-mbon-a').style.width = `${Math.min(100, (out.mbonApproach[1] / cap) * 100)}%`;
+  document.getElementById('v-mbon-r').textContent = out.mbonAvoid[2].toFixed(1);
+  document.getElementById('b-mbon-r').style.width = `${Math.min(100, (out.mbonAvoid[2] / cap) * 100)}%`;
+  document.getElementById('v-mbon-s').textContent = out.mbonApproach[4].toFixed(1);
+  document.getElementById('b-mbon-s').style.width = `${Math.min(100, (out.mbonApproach[4] / cap) * 100)}%`;
+  document.getElementById('v-dn').textContent = String(out.dnSpikes);
+  document.getElementById('b-dn').style.width = `${Math.min(100, (out.dnSpikes / 45) * 100)}%`;
+}
+
+function updateCamera() {
+  if (camMode === 'orbit' || camMode === 'far') {
+    const cx = Math.cos(camYaw) * Math.cos(camPitch) * camDist;
+    const cy = Math.sin(camPitch) * camDist;
+    const cz = Math.sin(camYaw) * Math.cos(camPitch) * camDist;
+    camera.position.lerp(new THREE.Vector3(cx, cy, cz), 0.14);
+    camera.lookAt(0, 0.35, 0);
+  } else if (camMode === 'top') {
+    camera.position.lerp(new THREE.Vector3(0, Math.max(22, camDist), 0.1), 0.12);
+    camera.lookAt(0, 0, 0);
+  } else {
+    const tx = flyPos.x - Math.cos(flyPos.angle) * 5.4;
+    const tz = flyPos.z - Math.sin(flyPos.angle) * 5.4;
+    camera.position.lerp(new THREE.Vector3(tx, flyPos.y + 2.8, tz), 0.1);
+    camera.lookAt(flyPos.x, flyPos.y + 0.5, flyPos.z);
+  }
+}
+
+function resize() {
+  const w = viewport.clientWidth;
+  const h = viewport.clientHeight;
+  camera.aspect = w / Math.max(1, h);
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+
+// Orbit + Zoom + 3D Raycaster Click-to-Place
+let placeMode = 'nectar';
+const raycaster = new THREE.Raycaster();
+const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const pointerNDC = new THREE.Vector2();
+const hitPt = new THREE.Vector3();
+
+let dragging = false, prevX = 0, prevY = 0, downX = 0, downY = 0;
+
+function handleViewportClick(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointerNDC, camera);
+  if (!raycaster.ray.intersectPlane(floorPlane, hitPt)) return;
+
+  // Clamp inside the circular terrarium
+  const r = Math.hypot(hitPt.x, hitPt.z);
+  const maxR = ARENA_RADIUS - 1.3;
+  let px = hitPt.x, pz = hitPt.z;
+  if (r > maxR) { px = (px / r) * maxR; pz = (pz / r) * maxR; }
+
+  if (placeMode === 'nectar') {
+    nectarState = { active: true, x: px, z: pz, amount: 1.0 };
+    nectarGroup.position.set(px, 0, pz);
+    nectarMesh.scale.set(1.25, 0.55, 1.25);
+    nectarGroup.visible = true;
+    playTone(540, 0.12, 'sine', 0.07);
+    statusLine.textContent = `Gota de néctar colocada em (${px.toFixed(1)}, ${pz.toFixed(1)}).`;
+  } else if (placeMode === 'ball') {
+    ballState = { x: px, z: pz, vx: (Math.random() - 0.5) * 0.18, vz: (Math.random() - 0.5) * 0.18 };
+    ballMesh.position.set(px, BALL_R, pz);
+    playTone(440, 0.10, 'triangle', 0.06);
+    statusLine.textContent = `Bolinha colocada em (${px.toFixed(1)}, ${pz.toFixed(1)}).`;
+  } else if (placeMode === 'pillar') {
+    if (customPillars.length >= 12) {
+      const old = customPillars.shift();
+      customGroup.remove(old.mesh);
+    }
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.65, 0.72, 2.4, 20),
+      new THREE.MeshPhysicalMaterial({ color: 0x34d399, emissive: 0x065f46, emissiveIntensity: 0.25, transparent: true, opacity: 0.65, roughness: 0.2 })
+    );
+    mesh.position.set(px, 1.2, pz);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    customGroup.add(mesh);
+    customPillars.push({ x: px, z: pz, r: 0.72, h: 2.4, mesh });
+    playTone(320, 0.10, 'square', 0.04);
+    statusLine.textContent = `Obstáculo adicionado (${customPillars.length}/12). A mosca pode contornar ou voar por cima.`;
+  } else if (placeMode === 'call') {
+    callTarget = { active: true, x: px, z: pz, timer: 140 };
+    callRing.position.set(px, 0.08, pz);
+    callRing.material.opacity = 0.85;
+    playTone(620, 0.10, 'sine', 0.06);
+    statusLine.textContent = `Chamando seu pet para (${px.toFixed(1)}, ${pz.toFixed(1)})!`;
+  }
+}
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  dragging = true;
+  downX = prevX = e.clientX;
+  downY = prevY = e.clientY;
+});
+window.addEventListener('pointerup', (e) => {
+  if (dragging) {
+    const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
+    if (moved < 6 && e.target === renderer.domElement) {
+      handleViewportClick(e.clientX, e.clientY);
+    }
+  }
+  dragging = false;
+});
+window.addEventListener('pointermove', (e) => {
+  if (!dragging || (camMode !== 'orbit' && camMode !== 'far')) return;
+  camYaw += (e.clientX - prevX) * 0.007;
+  camPitch = Math.max(0.16, Math.min(1.42, camPitch + (e.clientY - prevY) * 0.007));
+  prevX = e.clientX; prevY = e.clientY;
+});
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  camDist = Math.max(7.5, Math.min(56.0, camDist + e.deltaY * 0.022));
+}, { passive: false });
+
+// Wire Buttons
+const btnPlay = document.getElementById('btn-play');
+const btnSleep = document.getElementById('btn-sleep');
+const btnCam = document.getElementById('btn-cam');
+const btnMute = document.getElementById('btn-mute');
+
+btnPlay.addEventListener('click', () => {
+  running = !running;
+  btnPlay.textContent = running ? 'Pausar' : 'Continuar';
+  btnPlay.classList.toggle('active', running);
+});
+
+document.getElementById('btn-feed').addEventListener('click', () => {
+  const ang = Math.random() * Math.PI * 2;
+  const dist = 1.5 + Math.random() * 4.2;
+  nectarState = { active: true, x: Math.cos(ang) * dist, z: Math.sin(ang) * dist, amount: 1.0 };
+  nectarGroup.position.set(nectarState.x, 0, nectarState.z);
+  nectarMesh.scale.set(1.2, 0.55, 1.2);
+  nectarGroup.visible = true;
+  playTone(540, 0.14, 'sine', 0.07);
+  statusLine.textContent = 'Gota de néctar colocada no terrário! Ela vai farejar quando estiver com fome.';
+});
+
+document.getElementById('btn-ball').addEventListener('click', () => {
+  const ang = Math.random() * Math.PI * 2;
+  ballState = { x: flyPos.x + Math.cos(ang) * 2.2, z: flyPos.z + Math.sin(ang) * 2.2, vx: Math.cos(ang) * 0.16, vz: Math.sin(ang) * 0.16 };
+  playTone(440, 0.1, 'triangle', 0.06);
+  statusLine.textContent = 'Bolinha lançada! Quando está saciada e descansada, ela rola a bolinha espontaneamente.';
+});
+
+document.getElementById('btn-takeoff').addEventListener('click', () => {
+  if (sleeping) {
+    statusLine.textContent = 'Acorde o pet antes de decolar.';
+    return;
+  }
+  flightBoostTimer = 95;
+  flyPos.y = Math.max(flyPos.y, 0.65);
+  playTone(590, 0.15, 'sine', 0.07);
+  statusLine.textContent = 'Voo 3D ativado! A mosca subiu em direção ao Anel Aéreo e às folhas elevadas.';
+});
+
+const btnMaze = document.getElementById('btn-maze');
+btnMaze.addEventListener('click', () => {
+  mazeEnabled = !mazeEnabled;
+  mazeGroup.visible = mazeEnabled;
+  btnMaze.classList.toggle('active', mazeEnabled);
+  btnMaze.textContent = mazeEnabled ? 'Labirinto: Ligado' : 'Labirinto: Desligado';
+  statusLine.textContent = mazeEnabled
+    ? 'Labirinto 3D ativado! A mosca precisa contornar os corredores (ou voar por cima).'
+    : 'Labirinto 3D removido: terrário aberto para voo livre.';
+});
+
+document.querySelectorAll('.place-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.place-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    placeMode = btn.dataset.place;
+    const labels = {
+      nectar: 'Clique em qualquer ponto do chão 3D para pingar Néctar.',
+      ball: 'Clique em qualquer ponto do chão 3D para posicionar a Bolinha.',
+      pillar: 'Clique em qualquer ponto do chão 3D para construir um Obstáculo.',
+      call: 'Clique em qualquer ponto do chão 3D para chamar seu pet até lá.'
+    };
+    statusLine.textContent = labels[placeMode];
+  });
+});
+
+document.getElementById('btn-clear-custom').addEventListener('click', () => {
+  for (const p of customPillars) customGroup.remove(p.mesh);
+  customPillars = [];
+  nectarState.active = false;
+  nectarGroup.visible = false;
+  callTarget.active = false;
+  callRing.material.opacity = 0;
+  statusLine.textContent = 'Itens colocados (obstáculos e néctar) removidos do terrário.';
+});
+
+btnSleep.addEventListener('click', () => {
+  sleeping = !sleeping;
+  btnSleep.classList.toggle('active', sleeping);
+  btnSleep.textContent = sleeping ? 'Acordar Pet' : 'Descansar (LTM)';
+  playTone(sleeping ? 310 : 520, 0.18, 'sine', 0.07);
+  statusLine.textContent = sleeping
+    ? 'Modo noturno ativado: recuperando descanso (R5) e consolidando memórias curtas em LTM.'
+    : 'Bom dia! Seu pet acordou descansado com as memórias consolidadas.';
+});
+
+const CAM_ORDER = ['far', 'orbit', 'top', 'follow'];
+const CAM_LABELS = { far: 'Câmera: Longe', orbit: 'Câmera: Perto', top: 'Câmera: De Cima', follow: 'Câmera: Seguir Pet' };
+
+function setCamMode(mode) {
+  camMode = mode;
+  if (mode === 'far') { camDist = 36.5; camPitch = 0.58; }
+  else if (mode === 'orbit') { camDist = 21.0; camPitch = 0.44; }
+  else if (mode === 'top') { camDist = 38.0; }
+  btnCam.textContent = CAM_LABELS[mode];
+}
+
+btnCam.addEventListener('click', () => {
+  const next = CAM_ORDER[(CAM_ORDER.indexOf(camMode) + 1) % CAM_ORDER.length];
+  setCamMode(next);
+});
+document.getElementById('btn-zoom-in').addEventListener('click', () => {
+  camDist = Math.max(6.5, camDist - 3.5);
+});
+document.getElementById('btn-zoom-out').addEventListener('click', () => {
+  camDist = Math.min(56.0, camDist + 4.5);
+});
+document.getElementById('btn-cam-far').addEventListener('click', () => {
+  setCamMode('far');
+});
+
+btnMute.addEventListener('click', () => {
+  muted = !muted;
+  btnMute.textContent = muted ? 'Som: Mudo' : 'Som: Ligado';
+});
+
+document.getElementById('btn-pos').addEventListener('click', () => triggerReinforcement(+1.0));
+document.getElementById('btn-neg').addEventListener('click', () => triggerReinforcement(-1.0));
+
+document.getElementById('btn-reset-weights').addEventListener('click', () => {
+  brain.shortW.fill(0);
+  brain.longW.fill(0);
+  brain.elig.fill(0);
+  statusLine.textContent = 'Pesos sinápticos zerados (memória limpa).';
+});
+
+document.querySelectorAll('.tier-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tier = btn.dataset.tier;
+    brain = new ArchitecturalFlyBrain(tier, 42);
+    document.getElementById('tier-info').textContent =
+      `Arquitetura ativa: ${brain.nKC} KC · ${brain.nPlastic} sinapses plásticas · APL ${Math.round(brain.cfg.aplGain * 100)}% · Recorrência ${Math.round(brain.cfg.recGain * 100)}%.`;
+    statusLine.textContent = `Cérebro expandido para ${brain.cfg.name} (${brain.nTotal} neurônios no circuito).`;
+  });
+});
+
+document.getElementById('btn-save').addEventListener('click', () => {
+  try {
+    const payload = {
+      petName: document.getElementById('pet-name').value,
+      tierKey: brain.tierKey,
+      tick: brain.tick,
+      rng: brain.rng.getState(),
+      shortW: Array.from(brain.shortW),
+      longW: Array.from(brain.longW),
+      pet, score, streak, missionIdx, missionHits, flyPos
+    };
+    localStorage.setItem('drosophila_3d_trainer_v1', JSON.stringify(payload));
+    statusLine.textContent = `Pet "${payload.petName}" salvo (${brain.cfg.name}, t = ${(brain.tick * brain.dt).toFixed(0)} ms).`;
+  } catch (e) {
+    statusLine.textContent = 'Armazenamento local indisponível.';
+  }
+});
+
+document.getElementById('btn-load').addEventListener('click', () => {
+  try {
+    const raw = localStorage.getItem('drosophila_3d_trainer_v1');
+    if (!raw) { statusLine.textContent = 'Nenhum pet salvo ainda.'; return; }
+    const d = JSON.parse(raw);
+    if (d.petName) document.getElementById('pet-name').value = d.petName;
+    brain = new ArchitecturalFlyBrain(d.tierKey || 'drosophila', 42);
+    brain.tick = d.tick || 0;
+    brain.rng.setState(d.rng || 42);
+    if (d.shortW && d.shortW.length === brain.shortW.length) brain.shortW.set(d.shortW);
+    if (d.longW && d.longW.length === brain.longW.length) brain.longW.set(d.longW);
+    if (d.pet) pet = d.pet;
+    score = d.score || 0; streak = d.streak || 0;
+    missionIdx = d.missionIdx || 0; missionHits = d.missionHits || 0;
+    if (d.flyPos) flyPos = d.flyPos;
+    document.querySelectorAll('.tier-btn').forEach(b => b.classList.toggle('active', b.dataset.tier === brain.tierKey));
+    updateMissionUI();
+    statusLine.textContent = `Pet "${document.getElementById('pet-name').value}" restaurado (${brain.cfg.name}).`;
+  } catch (e) {
+    statusLine.textContent = 'Erro ao restaurar checkpoint.';
+  }
+});
+
+window.addEventListener('keydown', (e) => {
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  if (e.code === 'Space' || e.key === '+') { e.preventDefault(); triggerReinforcement(+1.0); }
+  else if (e.key === 'x' || e.key === 'X' || e.key === '-') { triggerReinforcement(-1.0); }
+});
+
+let rafId = null;
+function animate() {
+  rafId = requestAnimationFrame(animate);
+  if (running) stepSimulation();
+  updateCamera();
+  renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', resize);
+window.addEventListener('load', () => {
+  resize();
+  updateMissionUI();
+  if (rafId) cancelAnimationFrame(rafId);
+  animate();
+});
+</script>
+</body>
+</html>
