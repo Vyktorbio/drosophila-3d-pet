@@ -1280,6 +1280,9 @@ function triggerReinforcement(val) {
   pulseRing.position.set(flyPos.x, flyPos.y + 0.14, flyPos.z);
   pulseRing.scale.set(1, 1, 1);
 
+  let nearest=-1,nearestDistance=2.5;
+  HABITAT_FRUITS.forEach((f,i)=>{const d=Math.hypot(f.x-flyPos.x,f.z-flyPos.z);if(d<nearestDistance){nearest=i;nearestDistance=d;}});
+  if(nearest>=0)neuroEthology.reinforce(nearest,val);
   if (val > 0) {
     pet.bond = Math.min(1.0, pet.bond + 0.045);
     playTone(680, 0.12, 'triangle', 0.09);
@@ -1387,7 +1390,7 @@ function triggerReinforcement(val) {
   let habitatVisits=0;
   let habitatLastVisit=-1;
   let habitatCooldown=0;
-  function habitatStep() {
+  function habitatStep(decision) {
     if (sleeping) return {dx:0,dz:0,dy:0,feeding:false};
     let best=null, bestScore=-Infinity;
     const hunger=1-pet.energy;
@@ -1396,7 +1399,7 @@ function triggerReinforcement(val) {
       const dist=Math.hypot(f.x-flyPos.x,f.z-flyPos.z);
       // Olfaction attenuates with distance. Positive/negative experience changes preference.
       const sensed=f.odor*f.food/(1+dist*0.20);
-      const score=(sensed*(0.20+hunger*1.9)+f.value*0.28)/(1+dist*0.065);
+      const score=(sensed*(0.20+hunger*1.9)+f.value*0.15+neuroEthology.odorValue(i)*0.9+neuroEthology.spatial[i]*0.3)/(1+dist*0.065)+(decision.target===i?0.35:0);
       if(score>bestScore){bestScore=score;best={f,i,dist};}
       fruitMeshes[i].mesh.scale.setScalar(0.72+0.28*f.food);
       fruitMeshes[i].marker.material.opacity=0.25+0.6*f.food;
@@ -1405,7 +1408,7 @@ function triggerReinforcement(val) {
     const {f,i,dist}=best;
     const pull=Math.min(1.15,Math.max(0,bestScore))*0.85;
     let feeding=false;
-    if(dist<1.25&&flyPos.y<0.72&&habitatCooldown<=0){
+    if(decision.activity==='alimentar'&&dist<1.25&&flyPos.y<0.72&&habitatCooldown<=0&&f.food>0.02){
       feeding=true;
       pet.energy=Math.min(1,pet.energy+0.0025);
       f.food=Math.max(0,f.food-0.0018);
@@ -1474,7 +1477,7 @@ class FlyNeuroEthology {
     let r=this.rng.next()*total,chosen=actions[0];
     for(let i=0;i<actions.length;i++){r-=exps[i];if(r<=0){chosen=actions[i];break;}}
     // Action persistence reduces frame-to-frame jitter.
-    if(this.steps%35===0)this.activity=chosen.name;
+    if(this.steps===1||this.steps%35===0)this.activity=chosen.name;
     let best=-1,bestScore=-Infinity;
     fruits.forEach((f,i)=>{
       const dist=Math.hypot(f.x-pos.x,f.z-pos.z);
@@ -1515,15 +1518,19 @@ function runNeuroExperiments() {
   function choice(model){return model.odorValue(0)-model.odorValue(1);}
   const m=new FlyNeuroEthology(1234);
   const baseline=choice(m);
-  for(let n=0;n<35;n++){m.reinforce(0,+1);m.reinforce(1,-1);}
+  for(let n=0;n<30;n++){m.reinforce(0,+1);m.reinforce(1,-1);}
   const acquisition=choice(m);
-  for(let n=0;n<20;n++){m.reinforce(0,-1);m.reinforce(1,+1);}
+  const beforeExtinction=m.odorValue(0);
+  for(let n=0;n<30;n++)m.reinforce(0,-1);
+  const extinction=m.odorValue(0);
+  for(let n=0;n<45;n++){m.reinforce(0,-1);m.reinforce(1,+1);}
   const reversal=choice(m);
   for(let n=0;n<500;n++)m.rest();
   const retention=choice(m);
   report.push({test:'Aquisição',pass:acquisition>baseline+0.05,value:acquisition});
-  report.push({test:'Reversão',pass:reversal<acquisition,value:reversal});
-  report.push({test:'Retenção',pass:Math.abs(retention)>0.01,value:retention});
+  report.push({test:'Extinção',pass:extinction<beforeExtinction,value:extinction});
+  report.push({test:'Reversão',pass:reversal<0,value:reversal});
+  report.push({test:'Retenção',pass:retention<0&&Math.abs(retention)>0.01,value:retention});
   const copy=new FlyNeuroEthology();copy.restore(m.snapshot());
   report.push({test:'Checkpoint',pass:Math.abs(choice(copy)-choice(m))<1e-9,value:choice(copy)});
   return report;
@@ -1602,12 +1609,13 @@ function stepSimulation() {
 
   // Natural odor-guided foraging, competing with trained zone preferences.
   const neuroDecision=neuroEthology.choose(HABITAT_FRUITS,flyPos,pet,PERCHES);
-  const foraging = habitatStep();
+  const foraging = habitatStep(neuroDecision);
   if(neuroDecision.activity!=='alimentar') {
-    foraging.dx*=0.15;foraging.dz*=0.15;foraging.dy*=0.15;
+    foraging.dx=0;foraging.dz=0;foraging.dy=0;
   }
   if(neuroDecision.activity==='repousar') {
     pet.rest=Math.min(1,pet.rest+0.0008);
+    actionLabel='Buscando repouso';
   }
 
   if (!nectarState.active && !callTarget.active) {
@@ -2209,7 +2217,7 @@ window.addEventListener('keydown', (e) => {
 const experimentPanel=document.createElement('section');
 experimentPanel.className='card';
 experimentPanel.style.marginTop='10px';
-experimentPanel.innerHTML='<strong>Neuroetologia experimental</strong><p style="color:var(--muted);font-size:12px">ORN → glomérulos/PN → KC → MBON; PAM/PPL1 simplificados, memória espacial e seleção de ações.</p><button id="run-neuro-tests">Executar 4 testes</button><div id="neuro-results" style="font-size:12px;margin-top:8px"></div>';
+experimentPanel.innerHTML='<strong>Neuroetologia experimental</strong><p style="color:var(--muted);font-size:12px">ORN → glomérulos/PN → KC → MBON; PAM/PPL1 simplificados, memória espacial e seleção de ações.</p><button id="run-neuro-tests">Executar 5 testes</button><div id="neuro-results" style="font-size:12px;margin-top:8px"></div>';
 document.querySelector('.stage-col').appendChild(experimentPanel);
 document.getElementById('run-neuro-tests').addEventListener('click',()=>{
   const results=runNeuroExperiments();
