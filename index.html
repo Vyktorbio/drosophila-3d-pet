@@ -1293,6 +1293,64 @@ function triggerReinforcement(val) {
   updateMissionUI();
 }
 
+
+  // Naturalistic habitat: fruit patches, odor gradients and learned site values.
+  // Values represent simulated spatial preferences, not conscious intentions.
+  const HABITAT_FRUITS = [
+    { x:-7.2, z:-4.7, kind:'banana', color:0xf2c94c, odor:1.0, food:1, value:0 },
+    { x: 7.4, z:-5.8, kind:'maca', color:0xd94b42, odor:0.65, food:1, value:0 },
+    { x: 5.6, z: 8.2, kind:'fruta madura', color:0xe7a04b, odor:0.9, food:1, value:0 },
+    { x:-6.4, z: 8.4, kind:'fruta fermentada', color:0x9870b1, odor:1.3, food:1, value:0 }
+  ];
+  const habitatGroup = new THREE.Group();
+  scene.add(habitatGroup);
+  const fruitMeshes = [];
+  HABITAT_FRUITS.forEach((fruit, i) => {
+    const mat = new THREE.MeshStandardMaterial({color:fruit.color,roughness:0.78});
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(i===0?0.72:0.83,16,12),mat);
+    mesh.scale.set(i===0?1.55:1,0.55,0.88);
+    mesh.position.set(fruit.x,0.46,fruit.z);
+    mesh.castShadow=true; mesh.receiveShadow=true;
+    habitatGroup.add(mesh); fruitMeshes.push(mesh);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.08,0.38,7),new THREE.MeshStandardMaterial({color:0x59683b}));
+    stem.position.set(fruit.x,0.95,fruit.z); habitatGroup.add(stem);
+    const patch = new THREE.Mesh(new THREE.CircleGeometry(1.55,24),new THREE.MeshBasicMaterial({color:0x416b36,transparent:true,opacity:0.17,depthWrite:false}));
+    patch.rotation.x=-Math.PI/2;patch.position.set(fruit.x,0.025,fruit.z);habitatGroup.add(patch);
+  });
+  let habitatVisits=0;
+  let habitatLastVisit=-1;
+  let habitatCooldown=0;
+  function habitatStep() {
+    if (sleeping) return {dx:0,dz:0,dy:0,feeding:false};
+    let best=null, bestScore=-Infinity;
+    const hunger=1-pet.energy;
+    HABITAT_FRUITS.forEach((f,i)=>{
+      f.food=Math.min(1,f.food+0.000012);
+      const dist=Math.hypot(f.x-flyPos.x,f.z-flyPos.z);
+      // Olfaction attenuates with distance. Positive/negative experience changes preference.
+      const sensed=f.odor*f.food/(1+dist*0.20);
+      const score=(sensed*(0.20+hunger*1.9)+f.value*0.28)/(1+dist*0.065);
+      if(score>bestScore){bestScore=score;best={f,i,dist};}
+      fruitMeshes[i].material.color.setHex(f.color);
+      fruitMeshes[i].scale.y=0.30+f.food*0.25;
+    });
+    if(!best)return {dx:0,dz:0,dy:0,feeding:false};
+    const {f,i,dist}=best;
+    const pull=Math.min(1.15,Math.max(0,bestScore))*0.85;
+    let feeding=false;
+    if(dist<1.25&&flyPos.y<0.72&&habitatCooldown<=0){
+      feeding=true;
+      pet.energy=Math.min(1,pet.energy+0.0025);
+      f.food=Math.max(0,f.food-0.0018);
+      f.value=Math.min(2,f.value+0.003);
+      if(habitatLastVisit!==i){habitatVisits++;habitatLastVisit=i;}
+    }
+    habitatCooldown=Math.max(0,habitatCooldown-1);
+    return {dx:(f.x-flyPos.x)/Math.max(0.4,dist)*pull,
+      dz:(f.z-flyPos.z)/Math.max(0.4,dist)*pull,
+      dy:(0.35-flyPos.y)/Math.max(0.8,dist)*pull*0.55,feeding};
+  }
+
 function stepSimulation() {
   clockSec += 0.016;
 
@@ -1358,6 +1416,15 @@ function stepSimulation() {
       desiredY += (dy / dist) * val * 1.45;
       desiredZ += (dz / dist) * val * 1.45;
     }
+  }
+
+  // Natural odor-guided foraging, competing with trained zone preferences.
+  const foraging = habitatStep();
+  if (!nectarState.active && !callTarget.active) {
+    desiredX += foraging.dx;
+    desiredY += foraging.dy;
+    desiredZ += foraging.dz;
+    if (foraging.feeding) actionLabel = 'Forrageando em fruta';
   }
 
   // Slight pull toward nearest elevated leaf perch when rest is low or curious
