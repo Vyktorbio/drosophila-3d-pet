@@ -1410,13 +1410,124 @@ function triggerReinforcement(val) {
       pet.energy=Math.min(1,pet.energy+0.0025);
       f.food=Math.max(0,f.food-0.0018);
       f.value=Math.min(2,f.value+0.003);
-      if(habitatLastVisit!==i){habitatVisits++;habitatLastVisit=i;}
+      if(neuroEthology.steps%24===0)neuroEthology.reinforce(i,+1);
+      if(habitatLastVisit!==i){habitatVisits++;habitatLastVisit=i;neuroEthology.visits[i]++;}
     }
     habitatCooldown=Math.max(0,habitatCooldown-1);
     return {dx:(f.x-flyPos.x)/Math.max(0.4,dist)*pull,
       dz:(f.z-flyPos.z)/Math.max(0.4,dist)*pull,
       dy:(0.35-flyPos.y)/Math.max(0.8,dist)*pull*0.55,feeding};
   }
+
+
+class FlyNeuroEthology {
+  constructor(seed=47) {
+    this.rng=createRng(seed); this.nOdors=4; this.nGlomeruli=8; this.nKCs=96;
+    this.orn=new Float64Array(8);this.pn=new Float64Array(8);
+    this.kc=new Float64Array(96);this.weights=new Float64Array(96*4*2);
+    this.eligibility=new Float64Array(96*4);
+    this.memory=new Float64Array(4);this.spatial=new Float64Array(4);
+    this.visits=new Uint32Array(4);this.heading=0;this.activity='explorar';
+    this.lastChoice=-1;this.rewards=0;this.punishments=0;this.steps=0;
+    this.compartments=['gamma1-PPL1','gamma5-PAM','beta2-PAM','alpha2-PPL1'];
+    this.odorTemplates=[[1,.22,.12,.04,.05,.04,.08,.02],[.10,.90,.25,.06,.04,.08,.03,.05],
+      [.08,.14,.92,.38,.08,.04,.10,.03],[.18,.07,.20,.94,.42,.15,.05,.09]];
+    this.projection=Array.from({length:96},(_,k)=>[k%8,(k*5+3)%8,(k*7+1)%8]);
+  }
+  sense(fruits,pos) {
+    this.orn.fill(0);
+    for(let i=0;i<4;i++){
+      const f=fruits[i],d=Math.hypot(f.x-pos.x,f.z-pos.z);
+      const concentration=f.odor*f.food/(1+0.085*d*d);
+      for(let g=0;g<8;g++)this.orn[g]+=concentration*this.odorTemplates[i][g];
+    }
+    for(let g=0;g<8;g++){
+      const surround=(this.orn[(g+1)%8]+this.orn[(g+7)%8])*0.16;
+      this.pn[g]=Math.max(0,Math.tanh(this.orn[g])-surround);
+    }
+    for(let k=0;k<96;k++){
+      const a=this.projection[k],v=(this.pn[a[0]]+this.pn[a[1]]+this.pn[a[2]])/3;
+      this.kc[k]=v>0.22?Math.min(1,(v-0.22)*2.6):0;
+    }
+  }
+  odorValue(i) {
+    let sum=0,denom=0;
+    const t=this.odorTemplates[i];
+    for(let k=0;k<96;k++){
+      const p=this.projection[k],act=(t[p[0]]+t[p[1]]+t[p[2]])/3;
+      if(act<0.18)continue;
+      const idx=(i*96+k)*2;
+      sum+=act*(this.weights[idx]-this.weights[idx+1]);denom+=act;
+    }
+    return denom?sum/denom:0;
+  }
+  choose(fruits,pos,pet,perches) {
+    this.sense(fruits,pos);this.steps++;
+    const hunger=1-pet.energy,fatigue=1-pet.rest;
+    const actions=[
+      {name:'alimentar',score:0.15+2.5*hunger+Math.max(...fruits.map((f,i)=>this.odorValue(i)))*0.45},
+      {name:'repousar',score:0.1+2.1*fatigue},
+      {name:'explorar',score:0.4+pet.curiosity*0.8},
+      {name:'brincar',score:0.10+pet.curiosity*0.9}
+    ];
+    const exps=actions.map(a=>Math.exp(a.score*1.6)),total=exps.reduce((a,b)=>a+b,0);
+    let r=this.rng.next()*total,chosen=actions[0];
+    for(let i=0;i<actions.length;i++){r-=exps[i];if(r<=0){chosen=actions[i];break;}}
+    // Action persistence reduces frame-to-frame jitter.
+    if(this.steps%35===0)this.activity=chosen.name;
+    let best=-1,bestScore=-Infinity;
+    fruits.forEach((f,i)=>{
+      const dist=Math.hypot(f.x-pos.x,f.z-pos.z);
+      const odor=f.odor*f.food/(1+0.085*dist*dist);
+      const score=odor*(0.35+2*hunger)+this.odorValue(i)*0.65+
+        this.spatial[i]*0.22-0.035*dist;
+      if(score>bestScore){bestScore=score;best=i;}
+    });
+    this.lastChoice=best;
+    return {activity:this.activity,target:best,odorValue:best<0?0:this.odorValue(best)};
+  }
+  reinforce(i,reward) {
+    if(i<0||i>=4||!Number.isFinite(reward))return;
+    const t=this.odorTemplates[i];
+    for(let k=0;k<96;k++){
+      const p=this.projection[k],act=(t[p[0]]+t[p[1]]+t[p[2]])/3;
+      if(act<0.18)continue;
+      const idx=(i*96+k)*2;
+      // Simplified compartment-specific DAN plasticity (not connectome exact).
+      const delta=Math.min(0.02,act*0.016)*Math.sign(reward);
+      this.weights[idx]=Math.max(-1,Math.min(1,this.weights[idx]+delta));
+      this.weights[idx+1]=Math.max(-1,Math.min(1,this.weights[idx+1]-delta));
+    }
+    this.spatial[i]=Math.max(-1,Math.min(1,this.spatial[i]+0.09*Math.sign(reward)));
+    if(reward>0)this.rewards++;else this.punishments++;
+  }
+  rest() {
+    for(let i=0;i<this.weights.length;i++)this.weights[i]*=0.999995;
+    for(let i=0;i<4;i++)this.spatial[i]*=0.99999;
+  }
+  snapshot(){return {weights:Array.from(this.weights),spatial:Array.from(this.spatial),visits:Array.from(this.visits),rewards:this.rewards,punishments:this.punishments,steps:this.steps,rng:this.rng.getState()};}
+  restore(d){if(!d)return;if(d.weights?.length===this.weights.length)this.weights.set(d.weights);if(d.spatial?.length===4)this.spatial.set(d.spatial);if(d.visits?.length===4)this.visits.set(d.visits);this.rewards=d.rewards||0;this.punishments=d.punishments||0;this.steps=d.steps||0;if(Number.isInteger(d.rng))this.rng.setState(d.rng);}
+}
+let neuroEthology=new FlyNeuroEthology();
+function runNeuroExperiments() {
+  // Paired training, extinction, reversal and retention; deterministic simulated tests.
+  const report=[];
+  function choice(model){return model.odorValue(0)-model.odorValue(1);}
+  const m=new FlyNeuroEthology(1234);
+  const baseline=choice(m);
+  for(let n=0;n<35;n++){m.reinforce(0,+1);m.reinforce(1,-1);}
+  const acquisition=choice(m);
+  for(let n=0;n<20;n++){m.reinforce(0,-1);m.reinforce(1,+1);}
+  const reversal=choice(m);
+  for(let n=0;n<500;n++)m.rest();
+  const retention=choice(m);
+  report.push({test:'Aquisição',pass:acquisition>baseline+0.05,value:acquisition});
+  report.push({test:'Reversão',pass:reversal<acquisition,value:reversal});
+  report.push({test:'Retenção',pass:Math.abs(retention)>0.01,value:retention});
+  const copy=new FlyNeuroEthology();copy.restore(m.snapshot());
+  report.push({test:'Checkpoint',pass:Math.abs(choice(copy)-choice(m))<1e-9,value:choice(copy)});
+  return report;
+}
 
 function stepSimulation() {
   clockSec += 0.016;
@@ -1432,6 +1543,7 @@ function stepSimulation() {
 
   // Pet homeostasis
   if (sleeping) {
+    neuroEthology.rest();
     pet.rest = Math.min(1.0, pet.rest + 0.0022);
     pet.energy = Math.max(0.05, pet.energy - 0.0001);
   } else {
@@ -1439,6 +1551,9 @@ function stepSimulation() {
     pet.energy = Math.max(0.05, pet.energy - 0.00038);
   }
   pet.curiosity = Math.max(0.05, Math.min(1.0, pet.energy * pet.rest * (0.55 + 0.45 * pet.bond)));
+
+  // Central-complex-inspired heading integrator: noisy path integration.
+  neuroEthology.heading=0.97*neuroEthology.heading+0.03*flyPos.angle;
 
   // 3D Sensory cues (3 floor zones + 1 aerial sky ring + play ball)
   const cues = { cyan: 0, amber: 0, red: 0, ball: 0, sky: 0 };
@@ -1486,7 +1601,15 @@ function stepSimulation() {
   }
 
   // Natural odor-guided foraging, competing with trained zone preferences.
+  const neuroDecision=neuroEthology.choose(HABITAT_FRUITS,flyPos,pet,PERCHES);
   const foraging = habitatStep();
+  if(neuroDecision.activity!=='alimentar') {
+    foraging.dx*=0.15;foraging.dz*=0.15;foraging.dy*=0.15;
+  }
+  if(neuroDecision.activity==='repousar') {
+    pet.rest=Math.min(1,pet.rest+0.0008);
+  }
+
   if (!nectarState.active && !callTarget.active) {
     desiredX += foraging.dx;
     desiredY += foraging.dy;
@@ -2016,6 +2139,7 @@ document.getElementById('btn-reset-weights').addEventListener('click', () => {
   brain.shortW.fill(0);
   brain.longW.fill(0);
   brain.elig.fill(0);
+  neuroEthology=new FlyNeuroEthology();
   statusLine.textContent = 'Pesos sinápticos zerados (memória limpa).';
 });
 
@@ -2040,7 +2164,8 @@ document.getElementById('btn-save').addEventListener('click', () => {
       rng: brain.rng.getState(),
       shortW: Array.from(brain.shortW),
       longW: Array.from(brain.longW),
-      pet, score, streak, missionIdx, missionHits, flyPos
+      pet, score, streak, missionIdx, missionHits, flyPos,
+      neuroEthology:neuroEthology.snapshot()
     };
     localStorage.setItem('drosophila_3d_trainer_v1', JSON.stringify(payload));
     statusLine.textContent = `Pet "${payload.petName}" salvo (${brain.cfg.name}, t = ${(brain.tick * brain.dt).toFixed(0)} ms).`;
@@ -2061,6 +2186,7 @@ document.getElementById('btn-load').addEventListener('click', () => {
     if (d.shortW && d.shortW.length === brain.shortW.length) brain.shortW.set(d.shortW);
     if (d.longW && d.longW.length === brain.longW.length) brain.longW.set(d.longW);
     if (d.pet) pet = d.pet;
+    neuroEthology=new FlyNeuroEthology();neuroEthology.restore(d.neuroEthology);
     score = d.score || 0; streak = d.streak || 0;
     missionIdx = d.missionIdx || 0; missionHits = d.missionHits || 0;
     if (d.flyPos) flyPos = d.flyPos;
@@ -2076,6 +2202,18 @@ window.addEventListener('keydown', (e) => {
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
   if (e.code === 'Space' || e.key === '+') { e.preventDefault(); triggerReinforcement(+1.0); }
   else if (e.key === 'x' || e.key === 'X' || e.key === '-') { triggerReinforcement(-1.0); }
+});
+
+
+// Experiment panel: metrics from deterministic simulated tests, not biological validation.
+const experimentPanel=document.createElement('section');
+experimentPanel.className='card';
+experimentPanel.style.marginTop='10px';
+experimentPanel.innerHTML='<strong>Neuroetologia experimental</strong><p style="color:var(--muted);font-size:12px">ORN → glomérulos/PN → KC → MBON; PAM/PPL1 simplificados, memória espacial e seleção de ações.</p><button id="run-neuro-tests">Executar 4 testes</button><div id="neuro-results" style="font-size:12px;margin-top:8px"></div>';
+document.querySelector('.stage-col').appendChild(experimentPanel);
+document.getElementById('run-neuro-tests').addEventListener('click',()=>{
+  const results=runNeuroExperiments();
+  document.getElementById('neuro-results').textContent=results.map(r=>r.test+': '+(r.pass?'PASSOU':'FALHOU')+' ('+r.value.toFixed(3)+')').join(' | ');
 });
 
 let rafId = null;
