@@ -780,8 +780,8 @@ class ArchitecturalFlyBrain {
 // ============================================================================
 const viewport = document.getElementById('viewport');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x070a10);
-scene.fog = new THREE.FogExp2(0x070a10, 0.010);
+scene.background = new THREE.Color(0x14201c);
+scene.fog = new THREE.FogExp2(0x14201c, 0.006);
 
 const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 180);
 let camMode = 'far'; // 'far' | 'orbit' | 'top' | 'follow'
@@ -796,10 +796,10 @@ renderer.toneMappingExposure = 1.15;
 viewport.appendChild(renderer.domElement);
 
 // 3-Point Studio Lighting (transitions smoothly between Day and Night/Sleep)
-const hemiLight = new THREE.HemisphereLight(0xbbe0ff, 0x1b241f, 0.9);
+const hemiLight = new THREE.HemisphereLight(0xe1f6ff, 0x32472d, 1.15);
 scene.add(hemiLight);
 
-const keyLight = new THREE.DirectionalLight(0xfff4e0, 1.35);
+const keyLight = new THREE.DirectionalLight(0xffe7b0, 1.65);
 keyLight.position.set(14, 26, 13);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.width = 1024;
@@ -843,6 +843,25 @@ const glassWall = new THREE.Mesh(
 );
 glassWall.position.y = 4.1;
 scene.add(glassWall);
+
+// Naturalistic undergrowth: inexpensive instanced vegetation around the rim.
+const groundCover = new THREE.Group();
+scene.add(groundCover);
+const sprigMat = new THREE.MeshStandardMaterial({color:0x4b8b4a,roughness:0.95,side:THREE.DoubleSide});
+const sprigGeo = new THREE.ConeGeometry(0.16,0.75,4);
+for(let i=0;i<110;i++){
+  const a=i*2.399963229728653;
+  const radius=10.4+5.2*Math.sqrt((i+0.5)/110);
+  const x=Math.cos(a)*radius,z=Math.sin(a)*radius;
+  const sprig=new THREE.Mesh(sprigGeo,sprigMat);
+  sprig.position.set(x,0.30,z);
+  sprig.rotation.z=Math.sin(i*3.7)*0.23;
+  sprig.scale.setScalar(0.55+(i%7)*0.095);
+  groundCover.add(sprig);
+}
+const soilRing=new THREE.Mesh(new THREE.RingGeometry(13.6,15.85,72),
+  new THREE.MeshBasicMaterial({color:0x527e39,transparent:true,opacity:0.14,side:THREE.DoubleSide}));
+soilRing.rotation.x=-Math.PI/2;soilRing.position.y=0.025;scene.add(soilRing);
 
 // 3D Botanical Branches & Elevated Leaf Perches across the bigger habitat
 const woodMat = new THREE.MeshStandardMaterial({ color: 0x4b3625, roughness: 0.88 });
@@ -1305,17 +1324,65 @@ function triggerReinforcement(val) {
   const habitatGroup = new THREE.Group();
   scene.add(habitatGroup);
   const fruitMeshes = [];
+  // Distinct fruit silhouettes, pedestals and soft ground patches make food easy to find.
   HABITAT_FRUITS.forEach((fruit, i) => {
-    const mat = new THREE.MeshStandardMaterial({color:fruit.color,roughness:0.78});
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(i===0?0.72:0.83,16,12),mat);
-    mesh.scale.set(i===0?1.55:1,0.55,0.88);
-    mesh.position.set(fruit.x,0.46,fruit.z);
-    mesh.castShadow=true; mesh.receiveShadow=true;
-    habitatGroup.add(mesh); fruitMeshes.push(mesh);
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.08,0.38,7),new THREE.MeshStandardMaterial({color:0x59683b}));
-    stem.position.set(fruit.x,0.95,fruit.z); habitatGroup.add(stem);
-    const patch = new THREE.Mesh(new THREE.CircleGeometry(1.55,24),new THREE.MeshBasicMaterial({color:0x416b36,transparent:true,opacity:0.17,depthWrite:false}));
-    patch.rotation.x=-Math.PI/2;patch.position.set(fruit.x,0.025,fruit.z);habitatGroup.add(patch);
+    const group = new THREE.Group();
+    group.position.set(fruit.x, 0, fruit.z);
+    const skin = new THREE.MeshStandardMaterial({color:fruit.color,roughness:0.65});
+    const stemMat = new THREE.MeshStandardMaterial({color:0x4b3723,roughness:0.95});
+    const leafMatFruit = new THREE.MeshStandardMaterial({color:0x4f963d,side:THREE.DoubleSide,roughness:0.78});
+    const fruitBody = new THREE.Group();
+    if (i === 0) {
+      // Curved banana built from tapered segments.
+      const pts = [];
+      for(let j=0;j<=12;j++) {
+        const t=j/12;
+        pts.push(new THREE.Vector3((t-0.5)*2.7,0.55+0.65*Math.sin(Math.PI*t),0.30*Math.sin(Math.PI*t)));
+      }
+      const curve=new THREE.CatmullRomCurve3(pts);
+      const banana=new THREE.Mesh(new THREE.TubeGeometry(curve,32,0.30,12,false),skin);
+      banana.castShadow=true;fruitBody.add(banana);
+      for(const t of [0,1]){
+        const tip=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),stemMat);
+        tip.position.copy(curve.getPoint(t));fruitBody.add(tip);
+      }
+    } else if (i === 1) {
+      const apple=new THREE.Mesh(new THREE.SphereGeometry(0.96,24,18),skin);
+      apple.scale.set(1,0.83,1);apple.position.y=0.93;apple.castShadow=true;fruitBody.add(apple);
+      const stalk=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,0.42,8),stemMat);
+      stalk.position.y=1.88;stalk.rotation.z=0.25;fruitBody.add(stalk);
+      const leaf=new THREE.Mesh(new THREE.SphereGeometry(0.37,12,8),leafMatFruit);
+      leaf.scale.set(1,0.12,0.42);leaf.position.set(0.33,1.88,0);leaf.rotation.z=0.3;fruitBody.add(leaf);
+    } else if (i === 2) {
+      // Orange fruit and fallen slice.
+      const orange=new THREE.Mesh(new THREE.SphereGeometry(0.92,22,16),skin);
+      orange.position.y=0.94;orange.castShadow=true;fruitBody.add(orange);
+      const slice=new THREE.Mesh(new THREE.CylinderGeometry(0.68,0.68,0.14,28),
+        new THREE.MeshStandardMaterial({color:0xffd57c,roughness:0.82}));
+      slice.rotation.z=0.45;slice.position.set(1.0,0.29,0.55);fruitBody.add(slice);
+      const center=new THREE.Mesh(new THREE.CylinderGeometry(0.43,0.43,0.15,24),
+        new THREE.MeshStandardMaterial({color:0xffa52d,roughness:0.88}));
+      center.rotation.copy(slice.rotation);center.position.copy(slice.position);fruitBody.add(center);
+    } else {
+      // A cluster of overripe berries with darker fermentation spots.
+      for(let j=0;j<6;j++){
+        const angle=j*Math.PI*2/6;
+        const berry=new THREE.Mesh(new THREE.SphereGeometry(0.49,14,12),
+          new THREE.MeshStandardMaterial({color:j%2?0x79466d:0x9d578b,roughness:0.83}));
+        berry.position.set(Math.cos(angle)*0.55,0.52+(j%3)*0.22,Math.sin(angle)*0.52);
+        berry.castShadow=true;fruitBody.add(berry);
+      }
+    }
+    group.add(fruitBody);
+    const patch=new THREE.Mesh(new THREE.CircleGeometry(2.15,40),
+      new THREE.MeshBasicMaterial({color:0x5b7439,transparent:true,opacity:0.30,depthWrite:false}));
+    patch.rotation.x=-Math.PI/2;patch.position.y=0.028;group.add(patch);
+    // Small floating marker: food remains visible from the default camera.
+    const marker=new THREE.Mesh(new THREE.RingGeometry(0.47,0.58,32),
+      new THREE.MeshBasicMaterial({color:0xffedab,transparent:true,opacity:0.85,side:THREE.DoubleSide}));
+    marker.rotation.x=-Math.PI/2;marker.position.y=0.075;group.add(marker);
+    habitatGroup.add(group);
+    fruitMeshes.push({mesh:fruitBody, marker, group});
   });
   let habitatVisits=0;
   let habitatLastVisit=-1;
@@ -1331,8 +1398,8 @@ function triggerReinforcement(val) {
       const sensed=f.odor*f.food/(1+dist*0.20);
       const score=(sensed*(0.20+hunger*1.9)+f.value*0.28)/(1+dist*0.065);
       if(score>bestScore){bestScore=score;best={f,i,dist};}
-      fruitMeshes[i].material.color.setHex(f.color);
-      fruitMeshes[i].scale.y=0.30+f.food*0.25;
+      fruitMeshes[i].mesh.scale.setScalar(0.72+0.28*f.food);
+      fruitMeshes[i].marker.material.opacity=0.25+0.6*f.food;
     });
     if(!best)return {dx:0,dz:0,dy:0,feeding:false};
     const {f,i,dist}=best;
@@ -1359,9 +1426,9 @@ function stepSimulation() {
     ZONES[i].crystal.rotation.y += 0.025;
     ZONES[i].crystal.position.y = ZONES[i].y + 0.55 + Math.sin(clockSec * 2.5 + i) * 0.08;
   }
-  const targetKeyInt = sleeping ? 0.35 : 1.35;
+  const targetKeyInt = sleeping ? 0.35 : 1.65;
   keyLight.intensity += (targetKeyInt - keyLight.intensity) * 0.06;
-  hemiLight.intensity += ((sleeping ? 0.4 : 0.9) - hemiLight.intensity) * 0.06;
+  hemiLight.intensity += ((sleeping ? 0.4 : 1.15) - hemiLight.intensity) * 0.06;
 
   // Pet homeostasis
   if (sleeping) {
