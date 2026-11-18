@@ -1399,14 +1399,14 @@ function triggerReinforcement(val) {
       const dist=Math.hypot(f.x-flyPos.x,f.z-flyPos.z);
       // Olfaction attenuates with distance. Positive/negative experience changes preference.
       const sensed=f.odor*f.food/(1+dist*0.20);
-      const score=(sensed*(0.20+hunger*1.9)+f.value*0.15+neuroEthology.odorValue(i)*0.9+neuroEthology.spatial[i]*0.3)/(1+dist*0.065)+(decision.target===i?0.35:0);
+      const score=f.food>0.04?(sensed*(0.20+hunger*1.9)+f.value*0.15+neuroEthology.odorValue(i)*0.9+neuroEthology.spatial[i]*0.3)/(1+dist*0.065)+(decision.target===i?0.65:0):-Infinity;
       if(score>bestScore){bestScore=score;best={f,i,dist};}
       fruitMeshes[i].mesh.scale.setScalar(0.72+0.28*f.food);
       fruitMeshes[i].marker.material.opacity=0.25+0.6*f.food;
     });
-    if(!best)return {dx:0,dz:0,dy:0,feeding:false};
+    if(!best||!Number.isFinite(bestScore))return {dx:0,dz:0,dy:0,feeding:false};
     const {f,i,dist}=best;
-    const pull=Math.min(1.15,Math.max(0,bestScore))*0.85;
+    const pull=0.65+0.65*Math.min(1,Math.max(0,bestScore));
     let feeding=false;
     if(decision.activity==='alimentar'&&dist<1.25&&flyPos.y<0.72&&habitatCooldown<=0&&f.food>0.02){
       feeding=true;
@@ -1477,7 +1477,7 @@ class FlyNeuroEthology {
     let r=this.rng.next()*total,chosen=actions[0];
     for(let i=0;i<actions.length;i++){r-=exps[i];if(r<=0){chosen=actions[i];break;}}
     // Action persistence reduces frame-to-frame jitter.
-    if(this.steps===1||this.steps%35===0)this.activity=chosen.name;
+    if(this.steps===1||this.steps%90===0)this.activity=chosen.name;
     let best=-1,bestScore=-Infinity;
     fruits.forEach((f,i)=>{
       const dist=Math.hypot(f.x-pos.x,f.z-pos.z);
@@ -1486,6 +1486,8 @@ class FlyNeuroEthology {
         this.spatial[i]*0.22-0.035*dist;
       if(score>bestScore){bestScore=score;best=i;}
     });
+    // Keep a destination until it becomes depleted or the fly reaches it.
+    if(this.lastChoice>=0&&this.steps%120!==0&&fruits[this.lastChoice].food>0.06)best=this.lastChoice;
     this.lastChoice=best;
     return {activity:this.activity,target:best,odorValue:best<0?0:this.odorValue(best)};
   }
@@ -1614,7 +1616,6 @@ function stepSimulation() {
     foraging.dx=0;foraging.dz=0;foraging.dy=0;
   }
   if(neuroDecision.activity==='repousar') {
-    pet.rest=Math.min(1,pet.rest+0.0008);
     actionLabel='Buscando repouso';
   }
 
@@ -2219,6 +2220,24 @@ experimentPanel.className='card';
 experimentPanel.style.marginTop='10px';
 experimentPanel.innerHTML='<strong>Neuroetologia experimental</strong><p style="color:var(--muted);font-size:12px">ORN → glomérulos/PN → KC → MBON; PAM/PPL1 simplificados, memória espacial e seleção de ações.</p><button id="run-neuro-tests">Executar 5 testes</button><div id="neuro-results" style="font-size:12px;margin-top:8px"></div>';
 document.querySelector('.stage-col').appendChild(experimentPanel);
+const liveNeuro=document.createElement('div');
+liveNeuro.style.cssText='font-size:12px;color:var(--muted);margin-top:10px;line-height:1.8';
+liveNeuro.setAttribute('aria-live','off');
+experimentPanel.appendChild(liveNeuro);
+let lastNeuroPanelTick=-1;
+function updateNeuroPanel(){
+  if(neuroEthology.steps-lastNeuroPanelTick<45)return;
+  lastNeuroPanelTick=neuroEthology.steps;
+  const i=neuroEthology.lastChoice;
+  const food=i>=0?HABITAT_FRUITS[i]:null;
+  const state=neuroEthology.activity;
+  const energy=Math.round(pet.energy*100);
+  const rest=Math.round(pet.rest*100);
+  const visits=Array.from(neuroEthology.visits).reduce((a,b)=>a+b,0);
+  liveNeuro.textContent='Decisão: '+state+' | Alvo: '+(food?food.kind:'nenhum')+
+    ' | Energia: '+energy+'% | Descanso: '+rest+'% | Visitas: '+visits+
+    ' | Reforços: +'+neuroEthology.rewards+' / -'+neuroEthology.punishments;
+}
 document.getElementById('run-neuro-tests').addEventListener('click',()=>{
   const results=runNeuroExperiments();
   document.getElementById('neuro-results').textContent=results.map(r=>r.test+': '+(r.pass?'PASSOU':'FALHOU')+' ('+r.value.toFixed(3)+')').join(' | ');
@@ -2228,6 +2247,7 @@ let rafId = null;
 function animate() {
   rafId = requestAnimationFrame(animate);
   if (running) stepSimulation();
+  updateNeuroPanel();
   updateCamera();
   renderer.render(scene, camera);
 }
